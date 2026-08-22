@@ -100,8 +100,7 @@ impl Server {
         let transport = stdio();
 
         // Serve the MCP server
-        let server = handler
-            .serve(transport)
+        let server = Box::pin(handler.serve(transport))
             .await
             .map_err(|e| Error::Service(format!("Failed to start MCP server: {e}")))?;
 

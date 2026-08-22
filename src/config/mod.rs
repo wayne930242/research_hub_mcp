@@ -23,12 +23,34 @@ pub struct Config {
     pub rate_limiting: RateLimitingConfig,
     /// Categorization configuration
     pub categorization: crate::services::CategorizationConfig,
+    /// Upstream paper-search-mcp wrapper configuration
+    pub paper_search: PaperSearchConfig,
+    /// Canonical bibliography database API configuration
+    pub library: LibraryConfig,
     /// Environment profile (development, production)
     #[serde(default = "default_profile")]
     pub profile: String,
     /// Configuration schema version
     #[serde(default = "default_schema_version")]
     pub schema_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct PaperSearchConfig {
+    /// Delegate discovery and OA downloads to paper-search-mcp
+    pub enabled: bool,
+    /// Command used to launch the Python MCP server
+    pub command: String,
+    /// Optional local paper-search-mcp checkout
+    pub project_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct LibraryConfig {
+    /// Bib-manager HTTP API URL; canonical writes happen through this API
+    pub api_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -157,6 +179,12 @@ pub struct ConfigEnvOverrides {
     pub profile: Option<String>,
     #[serde(rename = "download_directory")]
     pub download_directory: Option<String>,
+    #[serde(rename = "paper_search_project_dir")]
+    pub paper_search_project_dir: Option<String>,
+    #[serde(rename = "paper_search_command")]
+    pub paper_search_command: Option<String>,
+    #[serde(rename = "library_api_url")]
+    pub library_api_url: Option<String>,
 }
 
 impl Default for Config {
@@ -168,8 +196,41 @@ impl Default for Config {
             logging: LoggingConfig::default(),
             rate_limiting: RateLimitingConfig::default(),
             categorization: crate::services::CategorizationConfig::default(),
+            paper_search: PaperSearchConfig::default(),
+            library: LibraryConfig::default(),
             profile: default_profile(),
             schema_version: default_schema_version(),
+        }
+    }
+}
+
+impl Default for PaperSearchConfig {
+    fn default() -> Self {
+        let sibling = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|parent| parent.join("paper-search-mcp"))
+            .filter(|path| path.join("pyproject.toml").exists());
+        Self {
+            enabled: true,
+            command: std::env::var("UV")
+                .ok()
+                .filter(|command| !command.trim().is_empty())
+                .or_else(|| {
+                    dirs::home_dir()
+                        .map(|home| home.join(".local/bin/uv"))
+                        .filter(|path| path.is_file())
+                        .map(|path| path.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| "uv".to_string()),
+            project_dir: sibling,
+        }
+    }
+}
+
+impl Default for LibraryConfig {
+    fn default() -> Self {
+        Self {
+            api_url: "http://127.0.0.1:8000".to_string(),
         }
     }
 }
@@ -408,6 +469,23 @@ impl Config {
                     } else {
                         config.downloads.directory = expand_path(&dir);
                         debug!("Overrode download directory from env: {}", dir);
+                    }
+                }
+
+                if let Some(dir) = env_overrides.paper_search_project_dir {
+                    config.paper_search.project_dir = Some(expand_path(&dir));
+                    debug!("Overrode paper-search project directory from env");
+                }
+
+                if let Some(command) = env_overrides.paper_search_command {
+                    if !command.trim().is_empty() {
+                        config.paper_search.command = command;
+                    }
+                }
+
+                if let Some(api_url) = env_overrides.library_api_url {
+                    if !api_url.trim().is_empty() {
+                        config.library.api_url = api_url.trim_end_matches('/').to_string();
                     }
                 }
             }

@@ -151,10 +151,12 @@ async fn test_daemon_shutdown() {
 #[tokio::test]
 async fn test_resource_monitoring() {
     let config = Arc::new(Config::default());
-    let mut daemon_config = DaemonConfig::default();
-    daemon_config.monitor_interval_secs = 1;
-    daemon_config.max_memory_mb = 10000; // High limit to avoid triggering
-    daemon_config.max_cpu_percent = 100;
+    let daemon_config = DaemonConfig {
+        monitor_interval_secs: 1,
+        max_memory_mb: 10000, // High limit to avoid triggering
+        max_cpu_percent: 100,
+        ..DaemonConfig::default()
+    };
 
     let service = DaemonService::new(config, daemon_config).unwrap();
     let initial_status = service.get_status().await;
@@ -185,7 +187,7 @@ async fn test_health_check_concurrent_updates() {
             if i % 2 == 0 {
                 hc.set_healthy().await;
             } else {
-                hc.set_unhealthy(&format!("Check {} failed", i)).await;
+                hc.set_unhealthy(&format!("Check {i} failed")).await;
             }
         });
         handles.push(handle);
@@ -198,8 +200,7 @@ async fn test_health_check_concurrent_updates() {
 
     // Verify final status
     let status = health_check.get_status().await;
-    // The last update determines the status
-    assert!(status.healthy || !status.healthy); // Either state is valid after concurrent updates
+    assert!(status.timestamp <= std::time::SystemTime::now());
 }
 
 #[tokio::test]

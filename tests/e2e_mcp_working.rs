@@ -6,10 +6,11 @@ use tempfile::TempDir;
 
 /// Test all MCP functionality in a single connection
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_mcp_server_full_flow() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release", "--", "--log-level", "info"])
+        .args(["run", "--release", "--", "--log-level", "info"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -25,7 +26,7 @@ fn test_mcp_server_full_flow() -> Result<()> {
                             request: Value|
      -> Result<Value> {
         let request_str = serde_json::to_string(&request)?;
-        writeln!(stdin, "{}", request_str)?;
+        writeln!(stdin, "{request_str}")?;
         stdin.flush()?;
 
         let mut response_line = String::new();
@@ -76,7 +77,7 @@ fn test_mcp_server_full_flow() -> Result<()> {
     });
 
     let notification_str = serde_json::to_string(&initialized_notification)?;
-    writeln!(stdin, "{}", notification_str)?;
+    writeln!(stdin, "{notification_str}")?;
     stdin.flush()?;
 
     // Test 2: List tools
@@ -103,7 +104,7 @@ fn test_mcp_server_full_flow() -> Result<()> {
     assert!(tool_names.contains(&"debug_test".to_string()));
     assert!(tool_names.contains(&"search_papers".to_string()));
     assert!(tool_names.contains(&"download_paper".to_string()));
-    println!("✓ Tools listed: {:?}", tool_names);
+    println!("✓ Tools listed: {tool_names:?}");
 
     // Test 3: Debug tool
     println!("\nTest 3: Debug tool");
@@ -127,7 +128,7 @@ fn test_mcp_server_full_flow() -> Result<()> {
     assert_eq!(content["type"], "text");
     let text = content["text"].as_str().unwrap();
     assert!(text.contains("Debug echo: Hello from E2E test"));
-    println!("✓ Debug tool works: {}", text);
+    println!("✓ Debug tool works: {text}");
 
     // Test 4: Search papers
     println!("\nTest 4: Search papers");
@@ -149,10 +150,7 @@ fn test_mcp_server_full_flow() -> Result<()> {
     assert_eq!(response["id"], 4);
 
     if let Some(error) = response.get("error") {
-        println!(
-            "⚠ Search returned error (network issues acceptable): {:?}",
-            error
-        );
+        println!("⚠ Search returned error (network issues acceptable): {error:?}");
     } else {
         let content = &response["result"]["content"][0];
         let text = content["text"].as_str().unwrap();
@@ -221,7 +219,7 @@ fn test_custom_download_directory() -> Result<()> {
 
     // Start MCP server with custom download directory
     let mut child = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--release",
             "--",
@@ -252,7 +250,7 @@ fn test_custom_download_directory() -> Result<()> {
     });
 
     let request_str = serde_json::to_string(&init_request)?;
-    writeln!(stdin, "{}", request_str)?;
+    writeln!(stdin, "{request_str}")?;
     stdin.flush()?;
 
     let mut response_line = String::new();
@@ -264,10 +262,7 @@ fn test_custom_download_directory() -> Result<()> {
         "rust_research_mcp"
     );
 
-    println!(
-        "✓ Server started with custom download directory: {}",
-        download_dir
-    );
+    println!("✓ Server started with custom download directory: {download_dir}");
 
     // Clean up
     child.kill()?;
@@ -279,7 +274,7 @@ fn test_custom_download_directory() -> Result<()> {
 #[test]
 fn test_sequential_operations() -> Result<()> {
     let mut child = Command::new("cargo")
-        .args(&["run", "--release", "--", "--log-level", "error"])
+        .args(["run", "--release", "--", "--log-level", "error"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -345,7 +340,7 @@ fn test_sequential_operations() -> Result<()> {
         assert_eq!(response["id"], i);
 
         let text = response["result"]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains(&format!("Test {}", i)));
+        assert!(text.contains(&format!("Test {i}")));
     }
 
     println!("✓ Sequential operations completed successfully");

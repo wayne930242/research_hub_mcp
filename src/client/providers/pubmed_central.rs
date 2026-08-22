@@ -239,10 +239,12 @@ impl PubMedCentralProvider {
 
     /// Convert PMC article to `PaperMetadata`
     fn convert_to_paper(article: &PmcArticle) -> PaperMetadata {
-        let mut authors = Vec::new();
-        if let Some(ref author_list) = article.authors {
-            authors = author_list.iter().filter_map(|a| a.name.clone()).collect();
-        }
+        let authors = article
+            .authors
+            .as_ref()
+            .map_or_else(Vec::new, |author_list| {
+                author_list.iter().filter_map(|a| a.name.clone()).collect()
+            });
 
         // Extract DOI from article IDs if not in main DOI field
         let doi = article

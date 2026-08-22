@@ -1,5 +1,5 @@
+use crate::integrations::{LibraryClient, PaperSearchClient};
 use crate::tools::{
-    bibliography::BibliographyInput,
     code_search::CodeSearchInput,
     download::{
         BatchDownloadInput as ActualBatchDownloadInput, DownloadInput as ActualDownloadInput,
@@ -8,15 +8,13 @@ use crate::tools::{
     search::{SearchInput as ActualSearchInput, SearchResult},
 };
 use crate::{
-    BibliographyTool, CodeSearchTool, Config, DownloadTool, MetaSearchClient, MetadataExtractor,
-    Result, SearchTool,
+    CodeSearchTool, Config, DownloadTool, MetaSearchClient, MetadataExtractor, Result, SearchTool,
 };
 use chrono::Utc;
 use rmcp::{
     model::{
-        CallToolRequestParam, CallToolResult, Content, Implementation, InitializeRequestParam,
-        InitializeResult, ListToolsResult, PaginatedRequestParam, ProtocolVersion,
-        ServerCapabilities, ServerInfo, Tool,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+        ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo, Tool,
     },
     service::{RequestContext, RoleServer},
     ErrorData, ServerHandler,
@@ -30,7 +28,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 // Tool input structures
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -75,7 +73,8 @@ pub struct ResearchServerHandler {
     download_tool: Arc<DownloadTool>,
     metadata_extractor: Arc<MetadataExtractor>,
     code_search_tool: Arc<CodeSearchTool>,
-    bibliography_tool: Arc<BibliographyTool>,
+    paper_search_client: Option<Arc<PaperSearchClient>>,
+    library_client: Arc<LibraryClient>,
     /// Cache of DOI -> Category mappings from recent searches
     category_cache: Arc<RwLock<HashMap<String, CategoryCacheEntry>>>,
 }
@@ -100,8 +99,11 @@ impl ResearchServerHandler {
         // Initialize code search tool
         let code_search_tool = CodeSearchTool::new(config.clone())?;
 
-        // Initialize bibliography tool
-        let bibliography_tool = BibliographyTool::new(config.clone())?;
+        let paper_search_client = config
+            .paper_search
+            .enabled
+            .then(|| Arc::new(PaperSearchClient::new(config.clone())));
+        let library_client = Arc::new(LibraryClient::new(&config));
 
         Ok(Self {
             config,
@@ -109,7 +111,8 @@ impl ResearchServerHandler {
             download_tool: Arc::new(download_tool),
             metadata_extractor: Arc::new(metadata_extractor),
             code_search_tool: Arc::new(code_search_tool),
-            bibliography_tool: Arc::new(bibliography_tool),
+            paper_search_client,
+            library_client,
             category_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -171,57 +174,41 @@ impl ResearchServerHandler {
             None
         }
     }
+
+    fn tool_response(content: impl Into<String>, is_error: bool) -> CallToolResponse {
+        let content = vec![ContentBlock::text(content)];
+        if is_error {
+            CallToolResult::error(content).into()
+        } else {
+            CallToolResult::success(content).into()
+        }
+    }
 }
 
 impl ServerHandler for ResearchServerHandler {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(format!("🔬 Research Hub MCP Server v{} - Enhanced academic paper search and retrieval.\n\nProvides tools to:\n• 🔍 Search across 12+ academic sources (arXiv, CrossRef, PubMed, etc.)\n• 📥 Download papers with intelligent fallback protection\n• 📊 Extract metadata from PDFs\n• 🔍 Search code patterns in downloaded papers (NEW)\n• 📚 Generate citations in multiple formats (NEW)\n\nDesigned for personal academic research and Claude Code workflows.", env!("CARGO_PKG_VERSION"))),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
-    }
-
-    #[instrument(skip(self, request, context))]
-    fn initialize(
-        &self,
-        request: InitializeRequestParam,
-        context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = std::result::Result<InitializeResult, ErrorData>> + Send + '_ {
-        info!("MCP server initializing");
-
-        async move {
-            // Set peer info if not already set
-            if context.peer.peer_info().is_none() {
-                context.peer.set_peer_info(request);
-            }
-
-            Ok(InitializeResult {
-                protocol_version: ProtocolVersion::default(),
-                capabilities: ServerCapabilities::builder().enable_tools().build(),
-                server_info: Implementation {
-                    name: "knowledge_accumulator_mcp".into(),
-                    version: env!("CARGO_PKG_VERSION").into(),
-                },
-                instructions: Some("A MCP server for accumulating and organizing academic knowledge. Provides tools to search, download, and categorize academic papers.".into()),
-            })
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new(
+                "rust_research_mcp",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(format!("Research Hub MCP v{} is the maintained policy wrapper around paper-search-mcp and the canonical bibliography database. Search is discovery-only. Save selected results explicitly with save_papers_to_library; generate_bibliography exports BibTeX from stored database records. Downloads use open-access fallback by default.", env!("CARGO_PKG_VERSION")))
     }
 
     #[instrument(skip(self, _request, _context))]
     fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = std::result::Result<ListToolsResult, ErrorData>> + Send + '_ {
         info!("Listing available tools");
 
         async move {
             let tools = vec![
-                Tool {
-                    name: "debug_test".into(), 
-                    description: Some("Simple test tool for debugging - just echoes back what it receives".into()),
-                    input_schema: Arc::new(serde_json::json!({
+                Tool::new(
+                    "debug_test",
+                    "Simple test tool for debugging - just echoes back what it receives",
+                    serde_json::json!({
                         "type": "object",
                         "properties": {
                             "message": {
@@ -230,14 +217,12 @@ impl ServerHandler for ResearchServerHandler {
                             }
                         },
                         "required": ["message"]
-                    }).as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "search_papers".into(),
-                    description: Some("Search for academic papers using DOI, title, or author name".into()),
-                    input_schema: Arc::new(serde_json::json!({
+                    }).as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "search_papers",
+                    "Search papers through the maintained paper-search-mcp wrapper. Results are discovery-only until explicitly saved.",
+                    serde_json::json!({
                         "type": "object",
                         "properties": {
                             "query": {
@@ -250,17 +235,24 @@ impl ServerHandler for ResearchServerHandler {
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 100
+                            },
+                            "sources": {
+                                "type": "string",
+                                "description": "Comma-separated upstream sources, or 'all'",
+                                "default": "all"
+                            },
+                            "year": {
+                                "type": "string",
+                                "description": "Optional year filter where supported"
                             }
                         },
                         "required": ["query"]
-                    }).as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "download_paper".into(), 
-                    description: Some("Download a paper PDF by DOI. Papers are saved to the configured download directory.".into()),
-                    input_schema: Arc::new(serde_json::json!({
+                    }).as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "download_paper",
+                    "Download a paper through paper-search-mcp's OA-first fallback chain.",
+                    serde_json::json!({
                         "type": "object",
                         "properties": {
                             "doi": {
@@ -270,63 +262,87 @@ impl ServerHandler for ResearchServerHandler {
                             "filename": {
                                 "type": "string", 
                                 "description": "Optional custom filename for the downloaded PDF"
-                            }
+                            },
+                            "source": {"type": "string", "default": "crossref"},
+                            "paper_id": {"type": "string", "description": "Source-native identifier; defaults to DOI"},
+                            "title": {"type": "string"},
+                            "use_scihub": {"type": "boolean", "default": false}
                         },
                         "required": ["doi"]
-                    }).as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "download_papers_batch".into(),
-                    description: Some("Download multiple papers concurrently (MAX 100 papers per batch, 1-20 concurrent). For >100 papers, split into multiple batches. 5-10x faster than individual downloads.".into()),
-                    input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(ActualBatchDownloadInput)).unwrap().as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "extract_metadata".into(),
-                    description: Some("Extract metadata from PDF files. Single file or batch processing (12 concurrent for batch_files array). Returns title, authors, DOI, abstract, etc.".into()),
-                    input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(ActualMetadataInput)).unwrap().as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "search_code".into(),
-                    description: Some("Search for code patterns within downloaded research papers using regex".into()),
-                    input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(CodeSearchInput)).unwrap().as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
-                Tool {
-                    name: "generate_bibliography".into(),
-                    description: Some("Generate citations from DOIs with parallel fetching (processes unlimited DOIs with 30 concurrent fetches). Supports BibTeX, APA, MLA, Chicago, IEEE, Harvard formats.".into()),
-                    input_schema: Arc::new(serde_json::to_value(schemars::schema_for!(BibliographyInput)).unwrap().as_object().unwrap().clone()),
-                    output_schema: None,
-                    annotations: None,
-                },
+                    }).as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "download_papers_batch",
+                    "Download multiple papers concurrently (MAX 100 papers per batch, 1-20 concurrent). For >100 papers, split into multiple batches. 5-10x faster than individual downloads.",
+                    serde_json::to_value(schemars::schema_for!(ActualBatchDownloadInput)).unwrap().as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "extract_metadata",
+                    "Extract metadata from PDF files. Single file or batch processing (12 concurrent for batch_files array). Returns title, authors, DOI, abstract, etc.",
+                    serde_json::to_value(schemars::schema_for!(ActualMetadataInput)).unwrap().as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "search_code",
+                    "Search for code patterns within downloaded research papers using regex",
+                    serde_json::to_value(schemars::schema_for!(CodeSearchInput)).unwrap().as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "generate_bibliography",
+                    "Generate BibTeX on demand from selected keys already stored in the canonical bibliography database.",
+                    serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "keys": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Citation keys to export in order; omit for the full library"
+                            }
+                        }
+                    }).as_object().unwrap().clone(),
+                ),
+                Tool::new(
+                    "save_papers_to_library",
+                    "Explicitly save selected discovery results to the canonical bibliography database.",
+                    serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "entries": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "key": {"type": "string"},
+                                        "entry_type": {"type": "string", "default": "article"},
+                                        "fields": {"type": "object", "additionalProperties": {"type": "string"}},
+                                        "notes": {"type": "string"}
+                                    },
+                                    "required": ["key", "fields"]
+                                }
+                            }
+                        },
+                        "required": ["entries"]
+                    }).as_object().unwrap().clone(),
+                ),
             ];
 
-            Ok(ListToolsResult {
-                tools,
-                next_cursor: None,
-            })
+            Ok(ListToolsResult::with_all_items(tools))
         }
     }
 
     #[instrument(skip(self, request, _context))]
     fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = std::result::Result<CallToolResult, ErrorData>> + Send + '_ {
+    ) -> impl Future<Output = std::result::Result<CallToolResponse, ErrorData>> + Send + '_ {
         info!("Tool called: {}", request.name);
 
         let search_tool = Arc::clone(&self.search_tool);
         let download_tool = Arc::clone(&self.download_tool);
         let metadata_extractor = Arc::clone(&self.metadata_extractor);
         let code_search_tool = Arc::clone(&self.code_search_tool);
-        let bibliography_tool = Arc::clone(&self.bibliography_tool);
+        let paper_search_client = self.paper_search_client.clone();
+        let library_client = Arc::clone(&self.library_client);
 
         async move {
             match request.name.as_ref() {
@@ -341,11 +357,7 @@ impl ServerHandler for ResearchServerHandler {
                         })
                         .unwrap_or_else(|| "No message provided".to_string());
 
-                    Ok(CallToolResult {
-                        content: Some(vec![Content::text(format!("Debug echo: {message}"))]),
-                        structured_content: None,
-                        is_error: Some(false),
-                    })
+                    Ok(Self::tool_response(format!("Debug echo: {message}"), false))
                 }
                 "search_papers" => {
                     // Simple parsing for simplified schema
@@ -361,6 +373,30 @@ impl ServerHandler for ResearchServerHandler {
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(10) as u32;
 
+                    if let Some(client) = &paper_search_client {
+                        let sources = args
+                            .get("sources")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("all");
+                        let mut upstream_args = serde_json::json!({
+                            "query": query,
+                            "max_results_per_source": limit.clamp(1, 20),
+                            "sources": sources,
+                        })
+                        .as_object()
+                        .expect("object")
+                        .clone();
+                        if let Some(year) = args.get("year").and_then(|value| value.as_str()) {
+                            upstream_args.insert("year".to_string(), year.into());
+                        }
+                        match client.call("search_papers", upstream_args).await {
+                            Ok(result) => return Ok(result.into()),
+                            Err(error) => warn!(
+                                "paper-search wrapper unavailable, using legacy provider fallback: {error}"
+                            ),
+                        }
+                    }
+
                     let input = ActualSearchInput {
                         query: query.to_string(),
                         search_type: crate::tools::search::SearchType::Auto,
@@ -375,8 +411,7 @@ impl ServerHandler for ResearchServerHandler {
                     // Cache the category information for each paper
                     self.cache_paper_categories(&results).await;
 
-                    Ok(CallToolResult {
-                        content: Some(vec![Content::text(format!("📚 Found {} papers for '{}'\n\n{}\n\n💡 Tip: Papers from {} may be available for download. Very recent papers (2024-2025) might not be available yet.", 
+                    Ok(Self::tool_response(format!("📚 Found {} papers for '{}'\n\n{}\n\n💡 Tip: Papers from {} may be available for download. Very recent papers (2024-2025) might not be available yet.",
                             results.returned_count,
                             results.query,
                             results.papers.iter().enumerate().map(|(i, p)| {
@@ -399,10 +434,7 @@ impl ServerHandler for ResearchServerHandler {
                                 )
                             }).collect::<Vec<_>>().join("\n\n"),
                             results.papers.iter().filter(|p| !p.metadata.doi.is_empty()).count()
-                        ))]),
-                        structured_content: None,
-                        is_error: Some(false),
-                    })
+                        ), false))
                 }
                 "download_paper" => {
                     // Simple parsing for simplified schema
@@ -417,6 +449,42 @@ impl ServerHandler for ResearchServerHandler {
                         .get("filename")
                         .and_then(|v| v.as_str())
                         .map(ToString::to_string);
+
+                    if let Some(client) = &paper_search_client {
+                        let source = args
+                            .get("source")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("crossref");
+                        let paper_id = args
+                            .get("paper_id")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or(doi);
+                        let title = args
+                            .get("title")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("");
+                        let use_scihub = args
+                            .get("use_scihub")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        let upstream_args = serde_json::json!({
+                            "source": source,
+                            "paper_id": paper_id,
+                            "doi": doi,
+                            "title": title,
+                            "save_path": self.config.downloads.directory.to_string_lossy(),
+                            "use_scihub": use_scihub,
+                        })
+                        .as_object()
+                        .expect("object")
+                        .clone();
+                        match client.call("download_with_fallback", upstream_args).await {
+                            Ok(result) => return Ok(result.into()),
+                            Err(error) => warn!(
+                                "paper-search download unavailable, using legacy fallback: {error}"
+                            ),
+                        }
+                    }
 
                     // Look up category from recent search results
                     let category = self.get_cached_category(doi).await;
@@ -451,12 +519,8 @@ impl ServerHandler for ResearchServerHandler {
                                         let _ = std::fs::remove_file(file_path);
                                     }
                                 }
-                                Ok(CallToolResult {
-                                    content: Some(vec![Content::text(format!("⚠️ Download failed - no content received\n\nDOI: {doi}\n\n🔍 Debug Info:\n• Download ID: {}\n• Duration: {:.2}s\n• Status: {:?}\n• File created but empty\n\nThe paper was found but no downloadable content is available. This could be because:\n• The paper is too new or recently published\n• It's behind a paywall not covered by available sources\n• The DOI might be incorrect\n• Network issues during download\n\nTry checking the publisher's website or your institutional access.",
-                                        result.download_id, result.duration_seconds, result.status))]),
-                                    structured_content: None,
-                                    is_error: Some(true),
-                                })
+                                Ok(Self::tool_response(format!("⚠️ Download failed - no content received\n\nDOI: {doi}\n\n🔍 Debug Info:\n• Download ID: {}\n• Duration: {:.2}s\n• Status: {:?}\n• File created but empty\n\nThe paper was found but no downloadable content is available. This could be because:\n• The paper is too new or recently published\n• It's behind a paywall not covered by available sources\n• The DOI might be incorrect\n• Network issues during download\n\nTry checking the publisher's website or your institutional access.",
+                                    result.download_id, result.duration_seconds, result.status), true))
                             } else {
                                 debug!("Download successful - file size: {} bytes", file_size);
                                 let duration_info = if result.duration_seconds > 0.0 {
@@ -474,13 +538,9 @@ impl ServerHandler for ResearchServerHandler {
                                     .map(|h| format!("\n🔐 SHA256: {}...", &h[..16]))
                                     .unwrap_or_default();
 
-                                Ok(CallToolResult {
-                                    content: Some(vec![Content::text(format!("✅ Download successful!\n\n📄 File: {}\n📦 Size: {} KB{}{}",
+                                Ok(Self::tool_response(format!("✅ Download successful!\n\n📄 File: {}\n📦 Size: {} KB{}{}",
                                         result.file_path.as_ref().map_or("Unknown".to_string(), |p| p.display().to_string()),
-                                        file_size / 1024, duration_info, hash_info))]),
-                                    structured_content: None,
-                                    is_error: Some(false),
-                                })
+                                        file_size / 1024, duration_info, hash_info), false))
                             }
                         }
                         Err(e) => {
@@ -557,11 +617,7 @@ impl ServerHandler for ResearchServerHandler {
                                     )
                                 }
                             };
-                            Ok(CallToolResult {
-                                content: Some(vec![Content::text(error_msg)]),
-                                structured_content: None,
-                                is_error: Some(true),
-                            })
+                            Ok(Self::tool_response(error_msg, true))
                         }
                     }
                 }
@@ -663,11 +719,10 @@ impl ServerHandler for ResearchServerHandler {
                                 }
                             }
 
-                            Ok(CallToolResult {
-                                content: Some(vec![Content::text(content)]),
-                                structured_content: None,
-                                is_error: Some(result.summary.failed > result.summary.successful),
-                            })
+                            Ok(Self::tool_response(
+                                content,
+                                result.summary.failed > result.summary.successful,
+                            ))
                         }
                         Err(e) => {
                             debug!("Batch download failed: {}", e);
@@ -683,11 +738,7 @@ impl ServerHandler for ResearchServerHandler {
                                 e
                             );
 
-                            Ok(CallToolResult {
-                                content: Some(vec![Content::text(error_msg)]),
-                                structured_content: None,
-                                is_error: Some(true),
-                            })
+                            Ok(Self::tool_response(error_msg, true))
                         }
                     }
                 }
@@ -709,18 +760,12 @@ impl ServerHandler for ResearchServerHandler {
                             )
                         })?;
 
-                    Ok(CallToolResult {
-                        content: Some(vec![Content::text(
-                            serde_json::to_string_pretty(&result).map_err(|e| {
-                                ErrorData::internal_error(
-                                    format!("Serialization failed: {e}"),
-                                    None,
-                                )
-                            })?,
-                        )]),
-                        structured_content: None,
-                        is_error: Some(false),
-                    })
+                    Ok(Self::tool_response(
+                        serde_json::to_string_pretty(&result).map_err(|e| {
+                            ErrorData::internal_error(format!("Serialization failed: {e}"), None)
+                        })?,
+                        false,
+                    ))
                 }
                 "search_code" => {
                     let input: CodeSearchInput = serde_json::from_value(serde_json::Value::Object(
@@ -735,14 +780,10 @@ impl ServerHandler for ResearchServerHandler {
                     })?;
 
                     if results.is_empty() {
-                        Ok(CallToolResult {
-                            content: Some(vec![Content::text(
-                                "🔍 No code patterns found matching your search criteria."
-                                    .to_string(),
-                            )]),
-                            structured_content: None,
-                            is_error: Some(false),
-                        })
+                        Ok(Self::tool_response(
+                            "🔍 No code patterns found matching your search criteria.",
+                            false,
+                        ))
                     } else {
                         let formatted_results = results
                             .iter()
@@ -799,53 +840,71 @@ impl ServerHandler for ResearchServerHandler {
                             .collect::<Vec<_>>()
                             .join(&format!("\n\n{}\n\n", "─".repeat(60)));
 
-                        Ok(CallToolResult {
-                            content: Some(vec![Content::text(format!(
+                        Ok(Self::tool_response(
+                            format!(
                                 "🔍 Found {} files with matching code patterns:\n\n{}",
                                 results.len(),
                                 formatted_results
-                            ))]),
-                            structured_content: None,
-                            is_error: Some(false),
-                        })
+                            ),
+                            false,
+                        ))
                     }
                 }
                 "generate_bibliography" => {
-                    let input: BibliographyInput = serde_json::from_value(
-                        serde_json::Value::Object(request.arguments.unwrap_or_default()),
-                    )
-                    .map_err(|e| {
-                        ErrorData::invalid_params(format!("Invalid bibliography input: {e}"), None)
-                    })?;
-
-                    let result = bibliography_tool.generate(input).await.map_err(|e| {
+                    let args = request.arguments.unwrap_or_default();
+                    let keys = args
+                        .get("keys")
+                        .cloned()
+                        .map(serde_json::from_value::<Vec<String>>)
+                        .transpose()
+                        .map_err(|error| {
+                            ErrorData::invalid_params(
+                                format!("Invalid citation keys: {error}"),
+                                None,
+                            )
+                        })?;
+                    let result = library_client.export_bibtex(keys).await.map_err(|error| {
                         ErrorData::internal_error(
-                            format!("Bibliography generation failed: {e}"),
+                            format!("Database-derived bibliography export failed: {error}"),
                             None,
                         )
                     })?;
-
-                    let mut output = format!(
-                        "📚 Generated {} citations in {:?} format:\n\n",
-                        result.citations.len(),
-                        result.format
-                    );
-
-                    output.push_str(&result.bibliography);
-
-                    if !result.errors.is_empty() {
-                        output.push_str("\n\n⚠️ Errors encountered:\n");
-                        for error in &result.errors {
-                            output
-                                .push_str(&format!("• {}: {}\n", error.identifier, error.message));
-                        }
-                    }
-
-                    Ok(CallToolResult {
-                        content: Some(vec![Content::text(output)]),
-                        structured_content: None,
-                        is_error: Some(false),
-                    })
+                    Ok(Self::tool_response(
+                        serde_json::to_string_pretty(&result).map_err(|error| {
+                            ErrorData::internal_error(
+                                format!("Bibliography response serialization failed: {error}"),
+                                None,
+                            )
+                        })?,
+                        false,
+                    ))
+                }
+                "save_papers_to_library" => {
+                    let args = request.arguments.unwrap_or_default();
+                    let entries = args.get("entries").cloned().ok_or_else(|| {
+                        ErrorData::invalid_params(
+                            "Missing required 'entries' parameter".to_string(),
+                            None,
+                        )
+                    })?;
+                    let result = library_client
+                        .save_entries(entries)
+                        .await
+                        .map_err(|error| {
+                            ErrorData::internal_error(
+                                format!("Saving selected papers failed: {error}"),
+                                None,
+                            )
+                        })?;
+                    Ok(Self::tool_response(
+                        serde_json::to_string_pretty(&result).map_err(|error| {
+                            ErrorData::internal_error(
+                                format!("Library response serialization failed: {error}"),
+                                None,
+                            )
+                        })?,
+                        false,
+                    ))
                 }
                 _ => Err(ErrorData::invalid_request(
                     format!("Unknown tool: {}", request.name),
@@ -873,7 +932,7 @@ mod tests {
     #[tokio::test]
     async fn test_handler_creation() {
         let handler = create_test_handler();
-        assert!(handler.config.research_source.endpoints.len() > 0);
+        assert!(!handler.config.research_source.endpoints.is_empty());
     }
 
     #[tokio::test]

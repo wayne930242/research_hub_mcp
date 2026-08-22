@@ -48,6 +48,7 @@ pub mod client;
 pub mod config;
 // pub mod di;
 pub mod error;
+pub mod integrations;
 // pub mod ports;
 // pub mod repositories;
 pub mod resilience;

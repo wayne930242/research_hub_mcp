@@ -179,7 +179,7 @@ async fn test_error_recovery_workflow() {
     let result = search_tool.search_papers(search_input).await;
     // This might fail due to retry logic, but that's expected behavior
     // The test validates that the system handles failures gracefully
-    println!("Error recovery test result: {:?}", result);
+    println!("Error recovery test result: {result:?}");
 }
 
 #[tokio::test]
@@ -196,10 +196,10 @@ async fn test_concurrent_operations_scenario() {
     // Mock multiple endpoints
     for i in 1..=5 {
         Mock::given(method("GET"))
-            .and(path(&format!("/10.1000/test{}.doi", i)))
+            .and(path(format!("/10.1000/test{i}.doi")))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_string(&format!("<html><body>Paper {}</body></html>", i)),
+                    .set_body_string(format!("<html><body>Paper {i}</body></html>")),
             )
             .mount(&mock_server)
             .await;
@@ -211,7 +211,7 @@ async fn test_concurrent_operations_scenario() {
     let mut handles = vec![];
     for i in 1..=5 {
         let search_tool_clone = Arc::clone(&search_tool);
-        let doi = format!("10.1000/test{}.doi", i);
+        let doi = format!("10.1000/test{i}.doi");
 
         let handle = tokio::spawn(async move {
             let search_input = SearchInput {

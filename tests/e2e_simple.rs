@@ -1,5 +1,11 @@
+use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+
+fn write_json_line(writer: &mut impl Write, json: &str) -> std::io::Result<()> {
+    writer.write_all(json.as_bytes())?;
+    writer.write_all(b"\n")
+}
 
 /// Simple E2E test that verifies the MCP server works correctly
 #[test]
@@ -9,17 +15,15 @@ fn test_mcp_basic_functionality() {
     // Build the release binary first
     println!("Building release binary...");
     let build_output = Command::new("cargo")
-        .args(&["build", "--release"])
+        .args(["build", "--release"])
         .output()
         .expect("Failed to build");
 
-    if !build_output.status.success() {
-        panic!("Build failed");
-    }
+    assert!(build_output.status.success(), "Build failed");
 
     // Test 1: Server responds to initialization
     println!("Test 1: Server initialization");
-    let output = Command::new("./target/release/rust_research_mcp")
+    let output = Command::new("./target/release/rust-research-mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -30,13 +34,11 @@ fn test_mcp_basic_functionality() {
             let mut stdin = child.stdin.take().unwrap();
 
             // Send initialization request
-            writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"clientInfo":{{"name":"test","version":"1.0"}}}}}}"#)?;
+            write_json_line(&mut stdin, r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"clientInfo":{"name":"test","version":"1.0"}}}"#)?;
             stdin.flush()?;
 
-            // Kill after short delay (server will process and respond)
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            child.kill()?;
-
+            // Closing stdin lets the server finish cleanly after responding.
+            drop(stdin);
             child.wait_with_output()
         })
         .expect("Failed to run server");
@@ -56,7 +58,7 @@ fn test_mcp_basic_functionality() {
     println!("\nTest 2: Verify simplified schemas");
 
     // We need to send both initialize and list in one session
-    let mut child = Command::new("./target/release/rust_research_mcp")
+    let mut child = Command::new("./target/release/rust-research-mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -70,7 +72,7 @@ fn test_mcp_basic_functionality() {
     let mut reader = BufReader::new(stdout);
 
     // Send init
-    writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"clientInfo":{{"name":"test","version":"1.0"}}}}}}"#).unwrap();
+    write_json_line(&mut stdin, r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"clientInfo":{"name":"test","version":"1.0"}}}"#).unwrap();
     stdin.flush().unwrap();
 
     // Read init response
@@ -79,9 +81,9 @@ fn test_mcp_basic_functionality() {
     assert!(init_response.contains("rust_research_mcp"));
 
     // Send tools/list
-    writeln!(
-        stdin,
-        r#"{{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{{}}}}"#
+    write_json_line(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
     )
     .unwrap();
     stdin.flush().unwrap();
@@ -95,23 +97,27 @@ fn test_mcp_basic_functionality() {
     } else {
         // Check that tools are listed and schemas are simplified
         if tools_response.contains("search_papers") && tools_response.contains("download_paper") {
-            assert!(
-                !tools_response.contains("$ref"),
-                "Schema should not contain $ref"
-            );
-            assert!(
-                !tools_response.contains("$defs"),
-                "Schema should not contain $defs"
-            );
+            let response: Value = serde_json::from_str(&tools_response).unwrap();
+            let tools = response["result"]["tools"].as_array().unwrap();
+            for tool in tools.iter().filter(|tool| {
+                matches!(
+                    tool["name"].as_str(),
+                    Some("search_papers" | "download_paper")
+                )
+            }) {
+                let schema = tool["inputSchema"].to_string();
+                assert!(!schema.contains("$ref"), "Schema should not contain $ref");
+                assert!(!schema.contains("$defs"), "Schema should not contain $defs");
+            }
             println!("✓ Tools listed with simplified schemas");
         } else {
-            println!("Warning: Tools response unexpected: {}", tools_response);
+            println!("Warning: Tools response unexpected: {tools_response}");
             println!("✓ Server responded (partial test)");
         }
     }
 
     // Test 3: Debug tool works (if connection still open)
-    writeln!(stdin, r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"debug_test","arguments":{{"message":"E2E Test"}}}}}}"#).ok();
+    write_json_line(&mut stdin, r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"debug_test","arguments":{"message":"E2E Test"}}}"#).ok();
     stdin.flush().ok();
 
     let mut debug_response = String::new();
@@ -123,6 +129,7 @@ fn test_mcp_basic_functionality() {
 
     // Clean up
     child.kill().ok();
+    child.wait().ok();
 
     println!("\n=== All E2E Tests Passed! ===");
     println!("\nThe MCP server is working correctly and ready for use with Claude Desktop.");
@@ -136,8 +143,8 @@ fn test_custom_configuration() {
     let temp_dir = TempDir::new().unwrap();
     let download_path = temp_dir.path().to_string_lossy().to_string();
 
-    let output = Command::new("./target/release/rust_research_mcp")
-        .args(&["--download-dir", &download_path, "--log-level", "error"])
+    let output = Command::new("./target/release/rust-research-mcp")
+        .args(["--download-dir", &download_path, "--log-level", "error"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -145,11 +152,10 @@ fn test_custom_configuration() {
         .and_then(|mut child| {
             let mut stdin = child.stdin.take().unwrap();
 
-            writeln!(stdin, r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"clientInfo":{{"name":"test","version":"1.0"}}}}}}"#)?;
+            write_json_line(&mut stdin, r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"clientInfo":{"name":"test","version":"1.0"}}}"#)?;
             stdin.flush()?;
 
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            child.kill()?;
+            drop(stdin);
             child.wait_with_output()
         })
         .expect("Failed to run server");

@@ -41,7 +41,7 @@ async fn test_download_cascade_with_provider_failures() -> Result<()> {
     assert!(result.is_err());
 
     let error_message = result.unwrap_err().to_string();
-    println!("Error message: {}", error_message);
+    println!("Error message: {error_message}");
     assert!(
         error_message.contains("DOI")
             || error_message.contains("not found")

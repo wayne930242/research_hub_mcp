@@ -203,11 +203,10 @@ impl PidFile {
         for component in path.components() {
             current_path.push(component);
             if current_path.exists() && current_path.is_symlink() {
-                let path_str = current_path.to_string_lossy();
-
                 // On macOS, allow trusted system symlinks
                 #[cfg(target_os = "macos")]
                 {
+                    let path_str = current_path.to_string_lossy();
                     let is_trusted = TRUSTED_SYMLINKS.iter().any(|&trusted| {
                         path_str == trusted || path_str.starts_with(&format!("{}/", trusted))
                     });
@@ -266,15 +265,15 @@ impl PidFile {
         // Try different standard locations
         if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
             // User runtime directory (systemd style)
-            PathBuf::from(runtime_dir).join("knowledge_accumulator_mcp.pid")
+            PathBuf::from(runtime_dir).join("rust_research_mcp.pid")
         } else if let Some(home) = dirs::home_dir() {
             // User home directory
             home.join(".local")
                 .join("run")
-                .join("knowledge_accumulator_mcp.pid")
+                .join("rust_research_mcp.pid")
         } else {
             // Fallback to temp directory
-            std::env::temp_dir().join("knowledge_accumulator_mcp.pid")
+            std::env::temp_dir().join("rust_research_mcp.pid")
         }
     }
 }
@@ -329,9 +328,7 @@ mod tests {
     #[test]
     fn test_standard_path() {
         let path = PidFile::standard_path();
-        assert!(path
-            .to_string_lossy()
-            .contains("knowledge_accumulator_mcp.pid"));
+        assert!(path.to_string_lossy().contains("rust_research_mcp.pid"));
     }
 
     #[test]

@@ -41,7 +41,7 @@ async fn test_e2e_download_and_metadata_flow() -> Result<()> {
         Ok(result) => {
             // If download succeeded, test metadata extraction
             if let Some(file_path) = result.file_path {
-                println!("Successfully downloaded paper to: {:?}", file_path);
+                println!("Successfully downloaded paper to: {file_path:?}");
 
                 // Test metadata extraction on the downloaded file
                 let metadata_input = MetadataInput {
@@ -72,7 +72,7 @@ async fn test_e2e_download_and_metadata_flow() -> Result<()> {
         }
         Err(e) => {
             // Download failed - this is expected in CI environments or if the paper isn't available
-            println!("Download failed (expected in test environment): {}", e);
+            println!("Download failed (expected in test environment): {e}");
 
             // Verify the error message is informative
             let error_str = e.to_string();
@@ -83,8 +83,7 @@ async fn test_e2e_download_and_metadata_flow() -> Result<()> {
                     || error_str.contains("DOI")
                     || error_str.contains("network")
                     || error_str.contains("timeout"),
-                "Error message should be informative: {}",
-                error_str
+                "Error message should be informative: {error_str}"
             );
         }
     }
@@ -168,8 +167,7 @@ async fn test_url_resolution_errors() -> Result<()> {
         error_message.contains("Invalid URL")
             || error_message.contains("relative URL")
             || error_message.contains("url"),
-        "Error should mention URL issue: {}",
-        error_message
+        "Error should mention URL issue: {error_message}"
     );
 
     Ok(())
@@ -208,8 +206,7 @@ async fn test_provider_failure_messages() -> Result<()> {
             || error_message.contains("no downloadable PDF available")
             || error_message.contains("Download request failed")
             || error_message.contains("Service error"),
-        "Error should be informative about provider search: {}",
-        error_message
+        "Error should be informative about provider search: {error_message}"
     );
 
     Ok(())
@@ -230,9 +227,9 @@ async fn test_concurrent_downloads() -> Result<()> {
         let tool_clone = download_tool.clone();
         let handle = tokio::spawn(async move {
             let download_input = DownloadInput {
-                doi: Some(format!("10.invalid/test_should_fail.{}", i)),
+                doi: Some(format!("10.invalid/test_should_fail.{i}")),
                 url: None,
-                filename: Some(format!("concurrent_{}.pdf", i)),
+                filename: Some(format!("concurrent_{i}.pdf")),
                 directory: None,
                 category: None,
                 overwrite: false,
@@ -253,16 +250,14 @@ async fn test_concurrent_downloads() -> Result<()> {
         // All should fail (test DOIs), but gracefully
         assert!(
             download_result.is_err(),
-            "Download {} should fail with test DOI",
-            i
+            "Download {i} should fail with test DOI"
         );
 
         // Error messages should be reasonable
         let error_msg = download_result.unwrap_err().to_string();
         assert!(
             !error_msg.is_empty(),
-            "Error message should not be empty for download {}",
-            i
+            "Error message should not be empty for download {i}"
         );
     }
 

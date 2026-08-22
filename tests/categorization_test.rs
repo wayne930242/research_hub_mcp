@@ -153,7 +153,7 @@ async fn test_categorize_tool_input_validation() {
 
     // Test empty query
     let empty_query_input = CategorizeInput {
-        query: "".to_string(),
+        query: String::new(),
         papers: create_test_papers(),
         max_abstracts: None,
     };
@@ -181,8 +181,8 @@ async fn test_categorize_tool_input_validation() {
     // Test too many papers
     let many_papers: Vec<PaperMetadata> = (0..101)
         .map(|i| PaperMetadata {
-            doi: format!("10.1000/paper{}", i),
-            title: Some(format!("Paper {}", i)),
+            doi: format!("10.1000/paper{i}"),
+            title: Some(format!("Paper {i}")),
             authors: vec!["Author".to_string()],
             journal: None,
             year: Some(2024),
@@ -332,11 +332,9 @@ async fn test_categorization_prompt_generation() {
 
     // Should contain at least one abstract
     let has_abstract = papers.iter().any(|p| {
-        if let Some(abstract_text) = &p.abstract_text {
-            prompt.contains(abstract_text)
-        } else {
-            false
-        }
+        p.abstract_text
+            .as_ref()
+            .is_some_and(|abstract_text| prompt.contains(abstract_text))
     });
     assert!(has_abstract, "Prompt should contain paper abstracts");
 }

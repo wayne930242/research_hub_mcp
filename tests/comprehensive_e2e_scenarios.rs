@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use tokio;
 use tokio::sync::Semaphore;
 use tracing::{debug, info, warn};
 
@@ -133,8 +132,7 @@ async fn test_complete_research_workflow() {
     // Assert search performance target: < 120s (realistic for multiple provider operations)
     assert!(
         search_duration < Duration::from_secs(120),
-        "Search took {:?}, exceeding 120s target",
-        search_duration
+        "Search took {search_duration:?}, exceeding 120s target"
     );
 
     match search_result {
@@ -177,8 +175,7 @@ async fn test_complete_research_workflow() {
                         // Assert metadata extraction performance: < 10s
                         assert!(
                             metadata_duration < Duration::from_secs(10),
-                            "Metadata extraction took {:?}, exceeding 10s target",
-                            metadata_duration
+                            "Metadata extraction took {metadata_duration:?}, exceeding 10s target"
                         );
 
                         // Step 4: Generate bibliography (if metadata extraction succeeded)
@@ -246,8 +243,7 @@ async fn test_multi_provider_failover_cascade() {
             // Test that failover is reasonably fast (< 60s for all providers)
             assert!(
                 cascade_duration < Duration::from_secs(60),
-                "Cascade took {:?}, exceeding 60s reasonable limit",
-                cascade_duration
+                "Cascade took {cascade_duration:?}, exceeding 60s reasonable limit"
             );
         }
         Ok(None) => info!("No PDF found through cascade (expected for some papers)"),
@@ -270,7 +266,7 @@ async fn test_concurrent_research_sessions() {
         for (i, query) in queries.into_iter().enumerate() {
             let search_tool = search_tool.clone();
             let semaphore = semaphore.clone();
-            let session_id = format!("{}_{}", domain, i);
+            let session_id = format!("{domain}_{i}");
 
             let task = tokio::spawn(async move {
                 let _permit = semaphore.acquire().await.unwrap();
@@ -279,12 +275,11 @@ async fn test_concurrent_research_sessions() {
                     query: query.query,
                     search_type: match query.search_type {
                         SearchType::Auto => ToolSearchType::Auto,
-                        SearchType::Title => ToolSearchType::Title,
+                        SearchType::Title | SearchType::Keywords | SearchType::Subject => {
+                            ToolSearchType::Title
+                        }
                         SearchType::Doi => ToolSearchType::Doi,
                         SearchType::Author => ToolSearchType::Author,
-                        SearchType::Keywords => ToolSearchType::Title, // Map Keywords to Title
-                        SearchType::Subject => ToolSearchType::Title,  // Map Subject to Title
-                                                                        // AuthorYear doesn't exist in client::providers::SearchType
                     },
                     limit: query.max_results,
                     offset: query.offset,
@@ -311,28 +306,24 @@ async fn test_concurrent_research_sessions() {
     let mut total_response_time = Duration::new(0, 0);
     let results_len = results.len();
 
-    for result in results {
-        if let Ok((session_id, search_result, duration)) = result {
-            total_response_time += duration;
+    for (session_id, search_result, duration) in results.into_iter().flatten() {
+        total_response_time += duration;
 
-            match search_result {
-                Ok(search_response) => {
-                    successful_sessions += 1;
-                    info!(
-                        "Session {} completed in {:?} with {} results",
-                        session_id, duration, search_response.returned_count
-                    );
+        match search_result {
+            Ok(search_response) => {
+                successful_sessions += 1;
+                info!(
+                    "Session {} completed in {:?} with {} results",
+                    session_id, duration, search_response.returned_count
+                );
 
-                    // Assert individual session performance
-                    assert!(
-                        duration < Duration::from_secs(90),
-                        "Session {} took {:?}, exceeding 90s concurrent target",
-                        session_id,
-                        duration
-                    );
-                }
-                Err(e) => warn!("Session {} failed: {}", session_id, e),
+                // Assert individual session performance
+                assert!(
+                    duration < Duration::from_secs(90),
+                    "Session {session_id} took {duration:?}, exceeding 90s concurrent target"
+                );
             }
+            Err(e) => warn!("Session {} failed: {}", session_id, e),
         }
     }
 
@@ -344,8 +335,7 @@ async fn test_concurrent_research_sessions() {
 
     assert!(
         total_duration < Duration::from_secs(300),
-        "Total concurrent sessions took {:?}, exceeding 300s limit",
-        total_duration
+        "Total concurrent sessions took {total_duration:?}, exceeding 300s limit"
     );
 
     info!(
@@ -366,7 +356,7 @@ async fn test_large_scale_batch_operations() {
 
     // Create 20 dummy PDF files for batch testing
     for i in 0..20 {
-        let file_path = temp_dir.path().join(format!("test_paper_{}.pdf", i));
+        let file_path = temp_dir.path().join(format!("test_paper_{i}.pdf"));
         std::fs::write(&file_path, b"dummy PDF content for testing").unwrap();
         test_files.push(file_path.to_string_lossy().to_string());
     }
@@ -391,8 +381,7 @@ async fn test_large_scale_batch_operations() {
             // Assert batch processing performance scales reasonably
             assert!(
                 batch_duration < Duration::from_secs(30),
-                "Batch processing took {:?}, exceeding 30s limit for 20 files",
-                batch_duration
+                "Batch processing took {batch_duration:?}, exceeding 30s limit for 20 files"
             );
         }
         Err(e) => info!("Batch processing failed (expected for dummy files): {}", e),
@@ -501,7 +490,7 @@ async fn test_circuit_breaker_behavior() {
         let search_tool = search_tool.clone();
         let task = tokio::spawn(async move {
             let search_input = SearchInput {
-                query: format!("rapid test query {}", i),
+                query: format!("rapid test query {i}"),
                 search_type: ToolSearchType::Title,
                 limit: 1,
                 offset: 0,
@@ -518,12 +507,10 @@ async fn test_circuit_breaker_behavior() {
     let mut success_count = 0;
     let mut error_count = 0;
 
-    for result in results {
-        if let Ok(search_result) = result {
-            match search_result {
-                Ok(_) => success_count += 1,
-                Err(_) => error_count += 1,
-            }
+    for search_result in results.into_iter().flatten() {
+        match search_result {
+            Ok(_) => success_count += 1,
+            Err(_) => error_count += 1,
         }
     }
 
@@ -571,8 +558,7 @@ async fn test_resource_cleanup_and_limits() {
             if let Some(size) = response.file_size {
                 assert!(
                     size <= 50 * 1024 * 1024, // 50MB limit from config
-                    "Downloaded file exceeds size limit: {} bytes",
-                    size
+                    "Downloaded file exceeds size limit: {size} bytes"
                 );
             }
         }
@@ -599,7 +585,7 @@ async fn test_concurrent_request_performance() {
         let search_tool = search_tool.clone();
         let task = tokio::spawn(async move {
             let search_input = SearchInput {
-                query: format!("concurrent test {}", i),
+                query: format!("concurrent test {i}"),
                 search_type: ToolSearchType::Title,
                 limit: 1,
                 offset: 0,
@@ -623,25 +609,21 @@ async fn test_concurrent_request_performance() {
     let mut total_response_time = Duration::new(0, 0);
     let mut max_response_time = Duration::new(0, 0);
 
-    for result in results {
-        if let Ok((request_id, search_result, duration)) = result {
-            total_response_time += duration;
-            max_response_time = max_response_time.max(duration);
+    for (request_id, search_result, duration) in results.into_iter().flatten() {
+        total_response_time += duration;
+        max_response_time = max_response_time.max(duration);
 
-            match search_result {
-                Ok(_) => {
-                    successful_requests += 1;
+        match search_result {
+            Ok(_) => {
+                successful_requests += 1;
 
-                    // Assert individual request performance target
-                    assert!(
-                        duration < Duration::from_secs(120),
-                        "Request {} took {:?}, exceeding 120s concurrent limit",
-                        request_id,
-                        duration
-                    );
-                }
-                Err(e) => debug!("Request {} failed: {}", request_id, e),
+                // Assert individual request performance target
+                assert!(
+                    duration < Duration::from_secs(120),
+                    "Request {request_id} took {duration:?}, exceeding 120s concurrent limit"
+                );
             }
+            Err(e) => debug!("Request {} failed: {}", request_id, e),
         }
     }
 
@@ -655,22 +637,18 @@ async fn test_concurrent_request_performance() {
     // Performance assertions
     assert!(
         total_duration < Duration::from_secs(600),
-        "100 concurrent requests took {:?}, exceeding 600s total limit",
-        total_duration
+        "100 concurrent requests took {total_duration:?}, exceeding 600s total limit"
     );
 
     assert!(
         average_response_time < Duration::from_secs(120),
-        "Average response time {:?} exceeds 120s target",
-        average_response_time
+        "Average response time {average_response_time:?} exceeds 120s target"
     );
 
     // At least 50% success rate expected even under load
     assert!(
         successful_requests >= num_requests / 2,
-        "Success rate {}/{} below 50% threshold",
-        successful_requests,
-        num_requests
+        "Success rate {successful_requests}/{num_requests} below 50% threshold"
     );
 }
 
@@ -691,7 +669,7 @@ async fn test_memory_usage_under_load() {
             let search_tool = search_tool.clone();
             let task = tokio::spawn(async move {
                 let search_input = SearchInput {
-                    query: format!("memory test batch {} item {}", batch, i),
+                    query: format!("memory test batch {batch} item {i}"),
                     search_type: ToolSearchType::Title,
                     limit: 5,
                     offset: 0,
@@ -729,7 +707,7 @@ async fn test_memory_usage_under_load() {
 }
 
 /// Helper function to get current memory usage (simplified for testing)
-fn get_memory_usage() -> usize {
+const fn get_memory_usage() -> usize {
     // In a real implementation, this would use system APIs to get actual memory usage
     // For testing purposes, we'll return a mock value
     // On Linux: parse /proc/self/status or use procfs crate
@@ -774,8 +752,7 @@ async fn test_security_input_validation() {
         // Should reject path traversal attempts
         assert!(
             result.is_err(),
-            "Path traversal attack should be rejected: {}",
-            malicious_path
+            "Path traversal attack should be rejected: {malicious_path}"
         );
     }
 
@@ -823,14 +800,14 @@ async fn test_rate_limiting_enforcement() {
         Arc::new(SearchTool::new(config.clone()).expect("Failed to create SearchTool"));
 
     // Make rapid consecutive requests to test rate limiting
-    let num_rapid_requests = 5;
+    let num_rapid_requests: u32 = 5;
     let mut request_times = vec![];
 
     for i in 0..num_rapid_requests {
         let start_time = Instant::now();
 
         let search_input = SearchInput {
-            query: format!("rate limit test {}", i),
+            query: format!("rate limit test {i}"),
             search_type: ToolSearchType::Title,
             limit: 1,
             offset: 0,
@@ -845,7 +822,7 @@ async fn test_rate_limiting_enforcement() {
 
     // Analyze timing patterns to detect rate limiting
     let total_time: Duration = request_times.iter().sum();
-    let average_time = total_time / num_rapid_requests as u32;
+    let average_time = total_time / num_rapid_requests;
 
     info!(
         "Rate limiting test: {} requests in {:?} (avg: {:?})",

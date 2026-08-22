@@ -165,7 +165,7 @@ impl DaemonService {
         // Run the server with auto-restart if configured
         let mut restart_count = 0;
         loop {
-            match self.run_server().await {
+            match Box::pin(self.run_server()).await {
                 Ok(()) => {
                     info!("Server shutdown gracefully");
                     break;
@@ -221,7 +221,7 @@ impl DaemonService {
             let server_handle = {
                 let server = server.clone();
                 let monitor = self.task_monitor.clone();
-                monitor.instrument(async move { server.run().await })
+                monitor.instrument(async move { Box::pin(server.run()).await })
             };
 
             // Wait for either server completion or shutdown signal

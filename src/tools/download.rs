@@ -668,7 +668,7 @@ impl DownloadTool {
         }
 
         if input.papers.len() > 100 {
-            let num_batches = (input.papers.len() + 99) / 100;
+            let num_batches = input.papers.len().div_ceil(100);
             return Err(crate::Error::InvalidInput {
                 field: "papers".to_string(),
                 reason: format!(
@@ -728,7 +728,7 @@ impl DownloadTool {
         if total_papers <= 100 {
             format!("For {} papers: Use single batch call", total_papers)
         } else {
-            let num_batches = (total_papers + 99) / 100;
+            let num_batches = total_papers.div_ceil(100);
             let papers_per_batch = total_papers / num_batches;
             let remainder = total_papers % num_batches;
 
@@ -1549,7 +1549,7 @@ impl DownloadTool {
                 Ok(chunk) => {
                     chunk_count += 1;
                     total_bytes_received += chunk.len() as u64;
-                    if chunk_count <= 5 || chunk_count % 100 == 0 {
+                    if chunk_count <= 5 || chunk_count.is_multiple_of(100) {
                         debug!(
                             "📦 Chunk #{}: {} bytes (total: {} bytes)",
                             chunk_count,
@@ -1699,9 +1699,7 @@ impl DownloadTool {
             let percentage = (progress.downloaded as f64 / total as f64) * 100.0;
             progress.percentage = percentage;
             let remaining_bytes = total - progress.downloaded;
-            if progress.speed_bps > 0 {
-                progress.eta_seconds = Some(remaining_bytes / progress.speed_bps);
-            }
+            progress.eta_seconds = remaining_bytes.checked_div(progress.speed_bps);
         }
     }
 
@@ -1868,11 +1866,10 @@ impl DownloadTool {
                     })?;
 
                 if metadata.file_type().is_symlink() {
-                    let path_str = current_path.to_string_lossy();
-
                     // On macOS, allow trusted system symlinks
                     #[cfg(target_os = "macos")]
                     {
+                        let path_str = current_path.to_string_lossy();
                         let is_trusted = TRUSTED_SYMLINKS.iter().any(|&trusted| {
                             path_str == trusted || path_str.starts_with(&format!("{}/", trusted))
                         });
@@ -2235,7 +2232,9 @@ mod tests {
 
         let filename =
             DownloadTool::generate_filename(Some(&metadata), "https://example.com/test.pdf");
-        assert!(filename.ends_with(".pdf"));
+        assert!(Path::new(&filename)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf")));
         assert!(filename.len() <= 54); // 50 chars + ".pdf"
 
         // Test with URL fallback
@@ -2245,7 +2244,9 @@ mod tests {
         // Test with timestamp fallback
         let filename_fallback = DownloadTool::generate_filename(None, "https://example.com/");
         assert!(filename_fallback.starts_with("paper_"));
-        assert!(filename_fallback.ends_with(".pdf"));
+        assert!(Path::new(&filename_fallback)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf")));
     }
 
     #[tokio::test]
@@ -2438,8 +2439,8 @@ mod tests {
         assert_eq!(download_input.filename, Some("custom.pdf".to_string()));
         assert_eq!(download_input.directory, Some("/test/dir".to_string()));
         assert_eq!(download_input.category, Some("research".to_string())); // Request overrides shared
-        assert_eq!(download_input.overwrite, true);
-        assert_eq!(download_input.verify_integrity, false);
+        assert!(download_input.overwrite);
+        assert!(!download_input.verify_integrity);
     }
 
     #[test]
@@ -2576,17 +2577,17 @@ mod tests {
         assert_eq!(batches_101[1].len(), 1);
 
         // Test suggest_batch_config helper
-        let suggestion_50 = DownloadTool::suggest_batch_config(50);
-        assert!(suggestion_50.contains("Use single batch call"));
-        assert!(suggestion_50.contains("50 papers"));
+        let small_batch_suggestion = DownloadTool::suggest_batch_config(50);
+        assert!(small_batch_suggestion.contains("Use single batch call"));
+        assert!(small_batch_suggestion.contains("50 papers"));
 
-        let suggestion_250 = DownloadTool::suggest_batch_config(250);
-        assert!(suggestion_250.contains("3 batch calls"));
-        assert!(suggestion_250.contains("250 papers"));
+        let medium_batch_suggestion = DownloadTool::suggest_batch_config(250);
+        assert!(medium_batch_suggestion.contains("3 batch calls"));
+        assert!(medium_batch_suggestion.contains("250 papers"));
 
-        let suggestion_500 = DownloadTool::suggest_batch_config(500);
-        assert!(suggestion_500.contains("5 batch calls"));
-        assert!(suggestion_500.contains("500 papers"));
+        let large_batch_suggestion = DownloadTool::suggest_batch_config(500);
+        assert!(large_batch_suggestion.contains("5 batch calls"));
+        assert!(large_batch_suggestion.contains("500 papers"));
     }
 
     #[test]

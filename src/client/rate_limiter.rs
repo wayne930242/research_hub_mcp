@@ -54,7 +54,7 @@ impl RateLimiter {
         if let Some(last_time) = self.last_request_time {
             let elapsed = now.duration_since(last_time);
             if elapsed < self.min_interval {
-                let wait_time = self.min_interval - elapsed;
+                let wait_time = self.min_interval.saturating_sub(elapsed);
                 debug!("Rate limiter: waiting {}ms", wait_time.as_millis());
                 sleep(wait_time).await;
             }
@@ -103,7 +103,7 @@ impl RateLimiter {
             if elapsed >= self.min_interval {
                 None
             } else {
-                Some(self.min_interval - elapsed)
+                Some(self.min_interval.saturating_sub(elapsed))
             }
         })
     }

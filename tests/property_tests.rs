@@ -96,11 +96,11 @@ mod error_categorization_props {
             reason in r"[a-zA-Z0-9 ._-]{1,100}"
         ) {
             // Error categorization should be consistent
-            let error = Error::InvalidInput { field: field.clone(), reason: reason.clone() };
+            let error = Error::InvalidInput { field, reason };
             let category1 = error.category();
             let category2 = error.category();
-            prop_assert_eq!(category1.clone(), category2, "Error categorization should be consistent");
-            prop_assert_eq!(category1, ErrorCategory::Permanent, "InvalidInput should always be Permanent");
+            prop_assert_eq!(&category1, &category2, "Error categorization should be consistent");
+            prop_assert_eq!(&category1, &ErrorCategory::Permanent, "InvalidInput should always be Permanent");
         }
 
         #[test]
@@ -204,7 +204,7 @@ mod search_algorithm_props {
             // Search query normalization should be consistent
             let normalized1 = normalize_search_query(&query);
             let normalized2 = normalize_search_query(&normalized1);
-            prop_assert_eq!(normalized1.clone(), normalized2, "Query normalization should be idempotent");
+            prop_assert_eq!(&normalized1, &normalized2, "Query normalization should be idempotent");
 
             // Normalized query should not be empty unless input was empty/whitespace
             if !query.trim().is_empty() {
@@ -262,7 +262,7 @@ mod download_props {
             prop_assert!(!filename.contains('\\'), "Filename should not contain backslashes");
             prop_assert!(!filename.contains(':'), "Filename should not contain colons");
             prop_assert!(!filename.is_empty(), "Filename should not be empty");
-            prop_assert!(filename.ends_with(&format!(".{}", extension)), "Filename should have correct extension");
+            prop_assert!(filename.ends_with(&format!(".{extension}")), "Filename should have correct extension");
         }
 
         #[test]
@@ -287,9 +287,9 @@ mod download_props {
             .replace(' ', "_");
 
         if safe_title.is_empty() {
-            format!("document.{}", extension)
+            format!("document.{extension}")
         } else {
-            format!("{}.{}", safe_title, extension)
+            format!("{safe_title}.{extension}")
         }
     }
 

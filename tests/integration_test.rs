@@ -47,13 +47,13 @@ fn test_error_chain() {
         field: "test_field".to_string(),
         reason: "test error".to_string(),
     };
-    assert_eq!(format!("{}", err), "Invalid input: test_field - test error");
+    assert_eq!(format!("{err}"), "Invalid input: test_field - test error");
 }
 
 #[test]
 fn test_build_info() {
     // Test that build.rs generates the expected constants
     // This will fail to compile if build.rs isn't working
-    let _version = env!("CARGO_PKG_VERSION");
-    let _name = env!("CARGO_PKG_NAME");
+    assert!(!env!("CARGO_PKG_VERSION").is_empty());
+    assert!(!env!("CARGO_PKG_NAME").is_empty());
 }

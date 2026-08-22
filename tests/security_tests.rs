@@ -33,13 +33,11 @@ async fn test_sql_injection_attempts() {
         };
         let result = search_tool.search_papers(search_input).await;
         // Should fail validation or return empty results, not crash
-        match result {
-            Ok(search_result) => assert!(
+        if let Ok(search_result) = result {
+            assert!(
                 search_result.papers.is_empty(),
-                "SQL injection payload should not return papers: {}",
-                payload
-            ),
-            Err(_) => {} // Expected - should be rejected by validation
+                "SQL injection payload should not return papers: {payload}"
+            );
         }
     }
 }
@@ -72,13 +70,11 @@ async fn test_xss_injection_attempts() {
         };
         let result = search_tool.search_papers(search_input).await;
         // Should not execute any scripts, should be properly escaped/validated
-        match result {
-            Ok(search_result) => assert!(
+        if let Ok(search_result) = result {
+            assert!(
                 search_result.papers.is_empty(),
-                "XSS payload should not return papers: {}",
-                payload
-            ),
-            Err(_) => {} // Expected - should be rejected by validation
+                "XSS payload should not return papers: {payload}"
+            );
         }
     }
 }
@@ -118,8 +114,7 @@ async fn test_path_traversal_attempts() {
         // Should fail validation due to invalid filename
         assert!(
             result.is_err(),
-            "Path traversal payload should be rejected: {}",
-            payload
+            "Path traversal payload should be rejected: {payload}"
         );
 
         if let Err(err) = result {
@@ -198,12 +193,10 @@ async fn test_null_byte_injection() {
             offset: 0,
         };
         let search_result = search_tool.search_papers(search_input).await;
-        if search_result.is_ok() {
-            let search_result = search_result.unwrap();
+        if let Ok(search_result) = search_result {
             assert!(
                 search_result.papers.is_empty(),
-                "Null byte payload should not return papers: {}",
-                payload
+                "Null byte payload should not return papers: {payload}"
             );
         }
 
@@ -220,8 +213,7 @@ async fn test_null_byte_injection() {
         let download_result = download_tool.download_paper(download_input).await;
         assert!(
             download_result.is_err(),
-            "Null byte in filename should be rejected: {}",
-            payload
+            "Null byte in filename should be rejected: {payload}"
         );
     }
 }
@@ -258,12 +250,10 @@ async fn test_command_injection_attempts() {
             offset: 0,
         };
         let search_result = search_tool.search_papers(search_input).await;
-        if search_result.is_ok() {
-            let search_result = search_result.unwrap();
+        if let Ok(search_result) = search_result {
             assert!(
                 search_result.papers.is_empty(),
-                "Command injection payload should not return papers: {}",
-                payload
+                "Command injection payload should not return papers: {payload}"
             );
         }
 
@@ -280,8 +270,7 @@ async fn test_command_injection_attempts() {
         let download_result = download_tool.download_paper(download_input).await;
         assert!(
             download_result.is_err(),
-            "Command injection in filename should be rejected: {}",
-            payload
+            "Command injection in filename should be rejected: {payload}"
         );
     }
 }
@@ -299,12 +288,8 @@ async fn test_buffer_overflow_attempts() {
 
     // Should handle gracefully without crashing
     let meta_config = MetaSearchConfig::default();
-    let result = MetaSearchClient::new(config.clone(), meta_config);
-    // Might succeed or fail, but should not crash the process
-    match result {
-        Ok(_) => {}  // If it succeeds, that's fine
-        Err(_) => {} // If it fails, that's also acceptable
-    }
+    // Might succeed or fail, but should not crash the process.
+    drop(MetaSearchClient::new(config, meta_config));
 }
 
 #[tokio::test]
@@ -349,24 +334,21 @@ async fn test_unicode_handling() {
         };
         let download_result = download_tool.download_paper(download_input).await;
         // Should either succeed with sanitized filename or fail validation
-        match download_result {
-            Ok(info) => {
-                // If it succeeds, filename should be safe
-                if let Some(file_path) = info.file_path {
-                    let filename = file_path.file_name().unwrap().to_string_lossy();
-                    assert!(
-                        !filename.contains('\u{202E}'),
-                        "Dangerous Unicode should be filtered"
-                    );
-                    assert!(
-                        !filename.contains('\u{200D}'),
-                        "Zero-width characters should be filtered"
-                    );
-                }
+        if let Ok(info) = download_result {
+            // If it succeeds, filename should be safe
+            if let Some(file_path) = info.file_path {
+                let filename = file_path.file_name().unwrap().to_string_lossy();
+                assert!(
+                    !filename.contains('\u{202E}'),
+                    "Dangerous Unicode should be filtered"
+                );
+                assert!(
+                    !filename.contains('\u{200D}'),
+                    "Zero-width characters should be filtered"
+                );
             }
-            Err(_) => {
-                // Rejection is also acceptable
-            }
+        } else {
+            // Rejection is also acceptable
         }
     }
 }

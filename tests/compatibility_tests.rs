@@ -28,8 +28,7 @@ async fn test_cross_platform_path_handling() {
         if path.parent().unwrap().exists() || path == temp_dir.path() {
             assert!(
                 validation_result.is_ok(),
-                "Valid path should be accepted: {:?}",
-                path
+                "Valid path should be accepted: {path:?}"
             );
         }
     }
@@ -119,9 +118,7 @@ async fn test_network_stack_compatibility() {
 
         assert!(
             config.validate().is_ok(),
-            "IPv4 config should be valid: {}:{}",
-            host,
-            port
+            "IPv4 config should be valid: {host}:{port}"
         );
 
         // Test that server can be created (doesn't test binding)
@@ -225,11 +222,11 @@ fn test_file_descriptor_limits() {
     // Try to create many temporary files to test FD handling
     let mut files = Vec::new();
     for i in 0..100 {
-        let file_path = temp_dir.path().join(format!("test_file_{}.txt", i));
+        let file_path = temp_dir.path().join(format!("test_file_{i}.txt"));
         match std::fs::File::create(&file_path) {
             Ok(file) => files.push(file),
             Err(e) => {
-                println!("Failed to create file {}: {:?}", i, e);
+                println!("Failed to create file {i}: {e:?}");
                 break;
             }
         }
@@ -269,9 +266,9 @@ async fn test_signal_handling_compatibility() {
 
     // Run both futures concurrently
     tokio::select! {
-        _ = shutdown_future => {},
-        _ = server_future => {},
-        _ = tokio::time::sleep(Duration::from_secs(1)) => {
+        () = shutdown_future => {},
+        () = server_future => {},
+        () = tokio::time::sleep(Duration::from_secs(1)) => {
             panic!("Test timed out");
         }
     }
@@ -301,22 +298,20 @@ fn test_locale_and_encoding_handling() {
         // Test that strings are handled properly in configuration
         let mut config = Config::default();
         // Test with different timeout values derived from text
-        config.research_source.timeout_secs = (text.len() as u64).max(1).min(300);
+        config.research_source.timeout_secs = (text.len() as u64).clamp(1, 300);
 
         // Should not crash when serializing/deserializing
         let serialized = serde_json::to_string(&config);
         assert!(
             serialized.is_ok(),
-            "Should serialize config with text: {}",
-            text
+            "Should serialize config with text: {text}"
         );
 
         if let Ok(json) = serialized {
             let deserialized: Result<Config, _> = serde_json::from_str(&json);
             assert!(
                 deserialized.is_ok(),
-                "Should deserialize config with text: {}",
-                text
+                "Should deserialize config with text: {text}"
             );
         }
     }

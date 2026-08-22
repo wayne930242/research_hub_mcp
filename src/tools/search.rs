@@ -736,7 +736,7 @@ mod tests {
     fn test_search_input_validation() {
         // Empty query should fail
         let empty_input = SearchInput {
-            query: "".to_string(),
+            query: String::new(),
             search_type: SearchType::Auto,
             limit: 10,
             offset: 0,
@@ -810,7 +810,7 @@ mod tests {
         assert_eq!(key1, key2);
 
         // Different queries should generate different keys
-        let mut input2 = input.clone();
+        let mut input2 = input;
         input2.query = "Different Query".to_string();
         let key3 = SearchTool::generate_cache_key(&input2);
         assert_ne!(key1, key3);

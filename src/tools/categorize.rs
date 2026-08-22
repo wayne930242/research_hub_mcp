@@ -316,7 +316,7 @@ mod tests {
 
         // Empty query should fail
         let empty_query = CategorizeInput {
-            query: "".to_string(),
+            query: String::new(),
             papers: create_test_papers(),
             max_abstracts: None,
         };

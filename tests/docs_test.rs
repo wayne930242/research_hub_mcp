@@ -20,22 +20,16 @@ fn test_all_docs_exist() {
         let path = Path::new(docs_dir).join(doc);
         assert!(
             path.exists(),
-            "Required documentation file {} does not exist",
-            doc
+            "Required documentation file {doc} does not exist"
         );
 
         // Check file is not empty
         let content = fs::read_to_string(&path).expect("Failed to read doc file");
         assert!(
             !content.trim().is_empty(),
-            "Documentation file {} is empty",
-            doc
+            "Documentation file {doc} is empty"
         );
-        assert!(
-            content.len() > 100,
-            "Documentation file {} is too short",
-            doc
-        );
+        assert!(content.len() > 100, "Documentation file {doc} is too short");
     }
 }
 
@@ -56,8 +50,7 @@ fn test_port_consistency() {
         // Check for port 8080 consistency (should not have 8090)
         assert!(
             !content.contains("8090"),
-            "File {} contains inconsistent port 8090, should use 8080",
-            doc_file
+            "File {doc_file} contains inconsistent port 8090, should use 8080"
         );
     }
 }
@@ -81,8 +74,7 @@ fn test_security_doc_structure() {
     for section in &required_sections {
         assert!(
             content.contains(section),
-            "SECURITY.md missing required section: {}",
-            section
+            "SECURITY.md missing required section: {section}"
         );
     }
 }
@@ -106,8 +98,7 @@ fn test_user_guide_structure() {
     for section in &required_sections {
         assert!(
             content.contains(section),
-            "USER_GUIDE.md missing required section: {}",
-            section
+            "USER_GUIDE.md missing required section: {section}"
         );
     }
 }
@@ -131,8 +122,7 @@ fn test_troubleshooting_structure() {
     for section in &required_sections {
         assert!(
             content.contains(section),
-            "TROUBLESHOOTING.md missing required section: {}",
-            section
+            "TROUBLESHOOTING.md missing required section: {section}"
         );
     }
 }
@@ -156,8 +146,7 @@ fn test_architecture_structure() {
     for section in &required_sections {
         assert!(
             content.contains(section),
-            "ARCHITECTURE.md missing required section: {}",
-            section
+            "ARCHITECTURE.md missing required section: {section}"
         );
     }
 }
@@ -183,8 +172,7 @@ fn test_no_broken_internal_links() {
             let troubleshooting_path = Path::new(docs_dir).join("TROUBLESHOOTING.md");
             assert!(
                 troubleshooting_path.exists(),
-                "File {} links to TROUBLESHOOTING.md but it doesn't exist",
-                doc_file
+                "File {doc_file} links to TROUBLESHOOTING.md but it doesn't exist"
             );
         }
 
@@ -192,8 +180,7 @@ fn test_no_broken_internal_links() {
             let readme_path = Path::new("README.md");
             assert!(
                 readme_path.exists(),
-                "File {} links to README.md but it doesn't exist",
-                doc_file
+                "File {doc_file} links to README.md but it doesn't exist"
             );
         }
     }
@@ -228,8 +215,7 @@ fn test_toc_sections_exist() {
         // Each doc should have a table of contents
         assert!(
             content.contains("## Table of Contents") || content.contains("# Table of Contents"),
-            "File {} should have a Table of Contents section",
-            doc_file
+            "File {doc_file} should have a Table of Contents section"
         );
     }
 }
@@ -253,7 +239,7 @@ fn test_configuration_examples_valid_toml() {
             if !toml_content.trim().is_empty() {
                 match toml::from_str::<toml::Value>(&toml_content) {
                     Ok(_) => {} // Valid TOML
-                    Err(e) => panic!("Invalid TOML in USER_GUIDE.md: {}", e),
+                    Err(e) => panic!("Invalid TOML in USER_GUIDE.md: {e}"),
                 }
             }
         } else if in_toml_block {

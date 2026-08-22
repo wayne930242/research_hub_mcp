@@ -18,7 +18,6 @@ use rust_research_mcp::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio;
 use tracing::{debug, info};
 
 /// Test configuration that works offline
@@ -301,7 +300,7 @@ async fn test_meta_search_client() {
             }
         }
         Err(e) => {
-            panic!("Meta search failed: {}", e);
+            panic!("Meta search failed: {e}");
         }
     }
 }
@@ -482,8 +481,7 @@ async fn test_url_resolution() {
         assert_eq!(
             resolved.to_string(),
             expected,
-            "Failed to resolve {} correctly",
-            relative
+            "Failed to resolve {relative} correctly"
         );
     }
 }
@@ -519,19 +517,21 @@ async fn test_rate_limiting() {
     let provider = ArxivProvider::new().expect("Failed to create ArXiv provider");
 
     // Initialize rate limiter with test configuration
-    let mut test_config = rust_research_mcp::config::RateLimitingConfig::default();
-    test_config.allow_burst = false; // Disable burst for predictable testing
+    let mut test_config = rust_research_mcp::config::RateLimitingConfig {
+        allow_burst: false, // Disable burst for predictable testing
+        ..rust_research_mcp::config::RateLimitingConfig::default()
+    };
     test_config.providers.insert("arxiv".to_string(), 1.0); // 1 req/sec for testing
     provider.init_rate_limiter(&test_config).await;
 
-    let _context = create_search_context();
+    let context = create_search_context();
 
     // Make multiple rapid requests
     let query = create_search_query("test", SearchType::Keywords);
 
     let start = std::time::Instant::now();
     for i in 0..3 {
-        let _ = provider.search(&query, &_context).await;
+        let _ = provider.search(&query, &context).await;
         debug!("Request {} completed", i + 1);
     }
     let elapsed = start.elapsed();
@@ -540,8 +540,7 @@ async fn test_rate_limiting() {
     // (0s for first, 1s wait for second, 1s wait for third = 2s minimum)
     assert!(
         elapsed >= Duration::from_millis(1800), // Allow some tolerance
-        "Rate limiting should enforce delays between requests. Elapsed: {:?}",
-        elapsed
+        "Rate limiting should enforce delays between requests. Elapsed: {elapsed:?}"
     );
 
     info!("Rate limiting test completed in {:?}", elapsed);
@@ -554,7 +553,7 @@ async fn test_error_handling() {
 
     // Test with empty query
     let empty_input = ActualSearchInput {
-        query: "".to_string(),
+        query: String::new(),
         search_type: ToolSearchType::Auto,
         limit: 10,
         offset: 0,

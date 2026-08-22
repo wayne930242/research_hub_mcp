@@ -9,11 +9,11 @@ use tempfile::TempDir;
 fn send_request_sync(
     stdin: &mut std::process::ChildStdin,
     stdout: &mut BufReader<std::process::ChildStdout>,
-    request: Value,
+    request: &Value,
 ) -> Result<Value> {
     // Send request
     let request_str = serde_json::to_string(&request)?;
-    writeln!(stdin, "{}", request_str)?;
+    writeln!(stdin, "{request_str}")?;
     stdin.flush()?;
 
     // Read response with timeout
@@ -46,7 +46,6 @@ fn send_request_sync(
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // Not ready yet, continue
                 std::thread::sleep(Duration::from_millis(10));
-                continue;
             }
             Err(e) => return Err(rust_research_mcp::Error::Io(e)),
         }
@@ -70,7 +69,7 @@ fn initialize_mcp_server(
         }
     });
 
-    let response = send_request_sync(stdin, stdout, init_request)?;
+    let response = send_request_sync(stdin, stdout, &init_request)?;
 
     // Send initialized notification (required by MCP protocol)
     let initialized_notification = json!({
@@ -80,7 +79,7 @@ fn initialize_mcp_server(
     });
 
     let notification_str = serde_json::to_string(&initialized_notification)?;
-    writeln!(stdin, "{}", notification_str)?;
+    writeln!(stdin, "{notification_str}")?;
     stdin.flush()?;
 
     // Give the server a moment to process the notification
@@ -93,7 +92,7 @@ fn initialize_mcp_server(
 async fn test_mcp_server_initialization() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release", "--", "--log-level", "debug"])
+        .args(["run", "--release", "--", "--log-level", "debug"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -126,7 +125,7 @@ async fn test_mcp_server_initialization() -> Result<()> {
 async fn test_tools_list() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release", "--", "--log-level", "info"])
+        .args(["run", "--release", "--", "--log-level", "info"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -147,7 +146,7 @@ async fn test_tools_list() -> Result<()> {
         "params": {}
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, list_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &list_request)?;
 
     // Verify tools list
     assert_eq!(response["jsonrpc"], "2.0");
@@ -177,7 +176,7 @@ async fn test_tools_list() -> Result<()> {
 async fn test_debug_tool() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release"])
+        .args(["run", "--release"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -203,7 +202,7 @@ async fn test_debug_tool() -> Result<()> {
         }
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, debug_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &debug_request)?;
 
     // Verify debug tool response
     assert_eq!(response["jsonrpc"], "2.0");
@@ -226,7 +225,7 @@ async fn test_debug_tool() -> Result<()> {
 async fn test_search_papers_tool() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release"])
+        .args(["run", "--release"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -253,7 +252,7 @@ async fn test_search_papers_tool() -> Result<()> {
         }
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, search_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &search_request)?;
 
     // Verify search response
     assert_eq!(response["jsonrpc"], "2.0");
@@ -279,7 +278,7 @@ async fn test_download_paper_with_custom_directory() -> Result<()> {
 
     // Start MCP server with custom download directory
     let mut child = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--release",
             "--",
@@ -314,7 +313,7 @@ async fn test_download_paper_with_custom_directory() -> Result<()> {
         }
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, download_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &download_request)?;
 
     // Verify download response (may fail if paper not available, but should not error)
     assert_eq!(response["jsonrpc"], "2.0");
@@ -323,7 +322,7 @@ async fn test_download_paper_with_custom_directory() -> Result<()> {
     // Check if error or success
     if let Some(error) = response.get("error") {
         // If error, should be a service error (not a schema error)
-        println!("Download failed (expected in test): {:?}", error);
+        println!("Download failed (expected in test): {error:?}");
     } else {
         // If success, verify response structure
         let content = &response["result"]["content"][0];
@@ -343,7 +342,7 @@ async fn test_download_paper_with_custom_directory() -> Result<()> {
 async fn test_simplified_schema_compatibility() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release"])
+        .args(["run", "--release"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -364,7 +363,7 @@ async fn test_simplified_schema_compatibility() -> Result<()> {
         "params": {}
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, list_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &list_request)?;
 
     let tools = response["result"]["tools"].as_array().unwrap();
 
@@ -404,7 +403,7 @@ async fn test_simplified_schema_compatibility() -> Result<()> {
 async fn test_multiple_sequential_calls() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release"])
+        .args(["run", "--release"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -431,14 +430,14 @@ async fn test_multiple_sequential_calls() -> Result<()> {
             }
         });
 
-        let response = send_request_sync(&mut stdin, &mut stdout_reader, debug_request)?;
+        let response = send_request_sync(&mut stdin, &mut stdout_reader, &debug_request)?;
 
         assert_eq!(response["jsonrpc"], "2.0");
         assert_eq!(response["id"], i);
 
         let content = &response["result"]["content"][0];
         let text = content["text"].as_str().unwrap();
-        assert!(text.contains(&format!("Test message {}", i)));
+        assert!(text.contains(&format!("Test message {i}")));
     }
 
     // Clean up
@@ -451,7 +450,7 @@ async fn test_multiple_sequential_calls() -> Result<()> {
 async fn test_error_handling() -> Result<()> {
     // Start MCP server process
     let mut child = Command::new("cargo")
-        .args(&["run", "--release"])
+        .args(["run", "--release"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -475,7 +474,7 @@ async fn test_error_handling() -> Result<()> {
         }
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, bad_request)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &bad_request)?;
 
     // Should return an error
     assert_eq!(response["jsonrpc"], "2.0");
@@ -496,7 +495,7 @@ async fn test_error_handling() -> Result<()> {
         }
     });
 
-    let response = send_request_sync(&mut stdin, &mut stdout_reader, unknown_tool)?;
+    let response = send_request_sync(&mut stdin, &mut stdout_reader, &unknown_tool)?;
 
     assert_eq!(response["jsonrpc"], "2.0");
     assert_eq!(response["id"], 3);

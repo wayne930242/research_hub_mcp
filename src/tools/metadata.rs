@@ -493,7 +493,7 @@ impl MetadataExtractor {
             }
         })
         .await
-        .map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?
+        .map_err(|e| crate::Error::Io(std::io::Error::other(e)))?
         .map_err(|e| crate::Error::Parse {
             context: "PDF loading".to_string(),
             message: e,
@@ -1048,7 +1048,7 @@ impl MetadataExtractor {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(12));
 
         // Process files in parallel using futures::stream
-        let results: Vec<MetadataResult> = futures::stream::iter(files.into_iter())
+        let results: Vec<MetadataResult> = futures::stream::iter(files)
             .map(|file_path| {
                 let semaphore = semaphore.clone();
                 let extractor_config = self.config.clone();
@@ -1188,11 +1188,11 @@ impl MetadataExtractor {
             "total_processing_time_ms".to_string(),
             stats.total_processing_time_ms,
         );
-        if stats.total_extractions > 0 {
-            map.insert(
-                "avg_processing_time_ms".to_string(),
-                stats.total_processing_time_ms / stats.total_extractions,
-            );
+        if let Some(avg_processing_time_ms) = stats
+            .total_processing_time_ms
+            .checked_div(stats.total_extractions)
+        {
+            map.insert("avg_processing_time_ms".to_string(), avg_processing_time_ms);
         }
         map
     }

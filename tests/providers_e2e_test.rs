@@ -5,7 +5,6 @@ use rust_research_mcp::client::providers::{
 };
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio;
 
 /// Test configuration
 struct TestConfig {
@@ -289,6 +288,11 @@ async fn test_openalex_search_by_author() {
 
 #[tokio::test]
 async fn test_openalex_health_check() {
+    let config = TestConfig::default();
+    if !config.run_live_tests {
+        eprintln!("Skipping live test. Set RUN_LIVE_TESTS=true to run.");
+        return;
+    }
     let provider = OpenAlexProvider::new().expect("Failed to create OpenAlex provider");
     let context = create_test_context();
 
@@ -511,7 +515,7 @@ async fn test_semantic_scholar_search_by_doi() {
 
             // Check if it has PDF access
             if let Some(pdf_url) = &paper.pdf_url {
-                println!("  📄 Open access PDF available: {}", pdf_url);
+                println!("  📄 Open access PDF available: {pdf_url}");
             }
         }
     }
@@ -572,7 +576,9 @@ async fn test_unpaywall_search_by_doi() {
     let result = result.unwrap();
 
     if let Ok(result) = result {
-        if !result.papers.is_empty() {
+        if result.papers.is_empty() {
+            println!("Paper not found or not open access in Unpaywall");
+        } else {
             let paper = &result.papers[0];
             assert!(paper.title.is_some(), "Paper should have a title");
             println!(
@@ -582,10 +588,8 @@ async fn test_unpaywall_search_by_doi() {
 
             // Unpaywall should provide PDF URL for open access papers
             if let Some(pdf_url) = &paper.pdf_url {
-                println!("  📄 Open access PDF available: {}", pdf_url);
+                println!("  📄 Open access PDF available: {pdf_url}");
             }
-        } else {
-            println!("Paper not found or not open access in Unpaywall");
         }
     }
 }
@@ -702,7 +706,7 @@ async fn test_core_search_by_doi() {
 
             // Check if it has PDF access
             if let Some(pdf_url) = &paper.pdf_url {
-                println!("  📄 Open access PDF available: {}", pdf_url);
+                println!("  📄 Open access PDF available: {pdf_url}");
             }
         }
     }
@@ -763,17 +767,17 @@ async fn test_scihub_search_by_doi() {
     // Sci-Hub might be blocked or down, so we just check it doesn't panic
     match result {
         Ok(result) => {
-            if !result.papers.is_empty() {
+            if result.papers.is_empty() {
+                println!("Paper not found on Sci-Hub (might be too recent or blocked)");
+            } else {
                 let paper = &result.papers[0];
                 println!("Found on Sci-Hub: {:?}", paper.title);
                 // If found, should have a PDF URL
                 assert!(paper.pdf_url.is_some(), "Sci-Hub should provide PDF URLs");
-            } else {
-                println!("Paper not found on Sci-Hub (might be too recent or blocked)");
             }
         }
         Err(e) => {
-            println!("Sci-Hub search failed (might be blocked): {:?}", e);
+            println!("Sci-Hub search failed (might be blocked): {e:?}");
         }
     }
 }
@@ -803,7 +807,7 @@ async fn test_scihub_health_check() {
             );
         }
         Err(e) => {
-            println!("Sci-Hub health check error: {:?}", e);
+            println!("Sci-Hub health check error: {e:?}");
         }
     }
 }
@@ -855,7 +859,7 @@ async fn test_all_providers_with_same_query() {
                     println!(
                         "  {}. {} - {:?}",
                         i + 1,
-                        paper.doi.split('/').last().unwrap_or(&paper.doi),
+                        paper.doi.split('/').next_back().unwrap_or(&paper.doi),
                         paper.title.as_ref().map(|t| {
                             if t.len() > 50 {
                                 format!("{}...", &t[..50])
@@ -870,7 +874,7 @@ async fn test_all_providers_with_same_query() {
                 }
             }
             Ok(Err(e)) => {
-                println!("❌ Provider error: {:?}", e);
+                println!("❌ Provider error: {e:?}");
             }
             Err(_) => {
                 println!("⏱️ Timeout");
@@ -922,12 +926,12 @@ async fn test_provider_priorities_ordering() {
     ];
 
     // Sort by priority (descending)
-    let mut sorted = providers.clone();
+    let mut sorted = providers;
     sorted.sort_by_key(|(_, priority)| std::cmp::Reverse(*priority));
 
     println!("\nProvider Priority Order:");
     for (name, priority) in &sorted {
-        println!("  {}: {}", name, priority);
+        println!("  {name}: {priority}");
     }
 
     // Verify expected order

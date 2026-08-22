@@ -97,8 +97,7 @@ async fn test_categorization_workflow() {
     let config = Arc::new(config);
 
     // Create test papers with different domains
-    let papers = vec![
-        PaperMetadata {
+    let papers = [PaperMetadata {
             doi: "10.1000/ml".to_string(),
             title: Some("Machine Learning in Healthcare".to_string()),
             authors: vec!["AI Researcher".to_string()],
@@ -127,8 +126,7 @@ async fn test_categorization_workflow() {
             abstract_text: Some("This work explores multi-agent systems, agent coordination, and episodic memory mechanisms.".to_string()),
             pdf_url: None,
             file_size: None,
-        },
-    ];
+        }];
 
     let tool = CategorizeTool::new(config).unwrap();
 

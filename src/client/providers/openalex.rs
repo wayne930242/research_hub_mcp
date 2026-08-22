@@ -859,7 +859,7 @@ mod tests {
                 primary_location: None,
                 best_oa_location: Some(Location {
                     source: None,
-                    pdf_url: Some("".to_string()), // Empty URL should be filtered
+                    pdf_url: Some(String::new()), // Empty URL should be filtered
                 }),
                 abstract_inverted_index: None,
             }],
@@ -880,7 +880,7 @@ mod tests {
         let provider = OpenAlexProvider::new().unwrap();
 
         let query = SearchQuery {
-            query: "".to_string(), // Empty query
+            query: String::new(), // Empty query
             search_type: SearchType::Keywords,
             max_results: 10,
             offset: 0,
