@@ -15,8 +15,8 @@
 //!
 //! ```rust
 //! use std::sync::Arc;
-//! use knowledge_accumulator_mcp::di::{ServiceContainer, ServiceScope};
-//! use knowledge_accumulator_mcp::Config;
+//! use rust_research_mcp::di::{ServiceContainer, ServiceScope};
+//! use rust_research_mcp::Config;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -329,7 +329,21 @@ async fn test_download_paper_with_custom_directory() -> Result<()> {
         assert_eq!(content["type"], "text");
 
         let text = content["text"].as_str().unwrap();
-        assert!(text.contains("Download") || text.contains("failed"));
+        assert!(
+            !text.trim().is_empty(),
+            "download response must not be empty"
+        );
+
+        // The upstream wrapper returns the downloaded path directly on success.
+        // Public providers may also return an explanatory failure message, so only
+        // enforce the directory contract when a file was actually downloaded.
+        let downloaded_path = std::path::Path::new(text.trim());
+        if downloaded_path.is_file() {
+            assert!(
+                downloaded_path.starts_with(temp_dir.path()),
+                "downloaded file must stay inside the configured directory: {text}"
+            );
+        }
     }
 
     // Clean up

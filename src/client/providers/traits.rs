@@ -17,7 +17,7 @@
 //!
 //! ```no_run
 //! use async_trait::async_trait;
-//! use knowledge_accumulator_mcp::client::providers::{SourceProvider, SearchQuery, SearchContext, ProviderResult, ProviderError, SearchType};
+//! use rust_research_mcp::client::providers::{SourceProvider, SearchQuery, SearchContext, ProviderResult, ProviderError, SearchType};
 //! use std::time::Duration;
 //!
 //! struct MyProvider {
@@ -208,7 +208,7 @@ pub enum ProviderError {
 ///
 /// ```no_run
 /// use async_trait::async_trait;
-/// use knowledge_accumulator_mcp::client::providers::{SourceProvider, SearchQuery, SearchContext, ProviderResult, ProviderError, SearchType};
+/// use rust_research_mcp::client::providers::{SourceProvider, SearchQuery, SearchContext, ProviderResult, ProviderError, SearchType};
 /// use std::time::Duration;
 ///
 /// struct ExampleProvider {

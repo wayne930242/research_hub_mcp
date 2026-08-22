@@ -21,8 +21,8 @@
 //! ## Usage Example
 //!
 //! ```no_run
-//! use knowledge_accumulator_mcp::repositories::{PaperRepository, InMemoryPaperRepository};
-//! use knowledge_accumulator_mcp::client::PaperMetadata;
+//! use rust_research_mcp::repositories::{PaperRepository, InMemoryPaperRepository};
+//! use rust_research_mcp::client::PaperMetadata;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let repository = InMemoryPaperRepository::new();

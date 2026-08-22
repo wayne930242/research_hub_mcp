@@ -16,9 +16,9 @@
 //! ## Example Usage
 //!
 //! ```no_run
-//! use knowledge_accumulator_mcp::client::{MetaSearchClient, MetaSearchConfig};
-//! use knowledge_accumulator_mcp::client::providers::{SearchQuery, SearchType};
-//! use knowledge_accumulator_mcp::Config;
+//! use rust_research_mcp::client::{MetaSearchClient, MetaSearchConfig};
+//! use rust_research_mcp::client::providers::{SearchQuery, SearchType};
+//! use rust_research_mcp::Config;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = Config::default();
@@ -105,7 +105,7 @@ impl Default for HttpClientConfig {
 /// # Example
 ///
 /// ```no_run
-/// use knowledge_accumulator_mcp::client::{SecureHttpClientFactory, HttpClientConfig};
+/// use rust_research_mcp::client::{SecureHttpClientFactory, HttpClientConfig};
 /// use std::time::Duration;
 ///
 /// let config = HttpClientConfig {
