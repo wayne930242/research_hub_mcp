@@ -11,6 +11,7 @@ async fn selected_entries_are_saved_through_the_library_api() {
     let entries = json!([{
         "key": "fine1994essence",
         "entry_type": "article",
+        "academic_fields": ["philosophy"],
         "fields": {"title": "Essence and Modality"}
     }]);
     Mock::given(method("POST"))

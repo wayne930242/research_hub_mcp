@@ -185,6 +185,40 @@ impl ResearchServerHandler {
     }
 }
 
+fn save_papers_to_library_schema() -> serde_json::Map<String, serde_json::Value> {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"},
+                        "entry_type": {"type": "string", "default": "article"},
+                        "academic_fields": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                            },
+                            "description": "One or more lowercase kebab-case academic field slugs, such as philosophy"
+                        },
+                        "fields": {"type": "object", "additionalProperties": {"type": "string"}},
+                        "notes": {"type": "string"}
+                    },
+                    "required": ["key", "academic_fields", "fields"]
+                }
+            }
+        },
+        "required": ["entries"]
+    })
+    .as_object()
+    .unwrap()
+    .clone()
+}
+
 impl ServerHandler for ResearchServerHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
@@ -302,26 +336,8 @@ impl ServerHandler for ResearchServerHandler {
                 ),
                 Tool::new(
                     "save_papers_to_library",
-                    "Explicitly save selected discovery results to the canonical bibliography database.",
-                    serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "entries": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "key": {"type": "string"},
-                                        "entry_type": {"type": "string", "default": "article"},
-                                        "fields": {"type": "object", "additionalProperties": {"type": "string"}},
-                                        "notes": {"type": "string"}
-                                    },
-                                    "required": ["key", "fields"]
-                                }
-                            }
-                        },
-                        "required": ["entries"]
-                    }).as_object().unwrap().clone(),
+                    "Explicitly save selected discovery results, including their academic fields, to the canonical bibliography database.",
+                    save_papers_to_library_schema(),
                 ),
             ];
 
@@ -952,5 +968,20 @@ mod tests {
         assert_eq!(input.query, "test");
         assert_eq!(input.limit, 10);
         assert_eq!(input.offset, 0);
+    }
+
+    #[test]
+    fn save_papers_schema_requires_academic_fields() {
+        let schema = serde_json::Value::Object(save_papers_to_library_schema());
+        let item = &schema["properties"]["entries"]["items"];
+
+        assert_eq!(
+            item["required"],
+            serde_json::json!(["key", "academic_fields", "fields"])
+        );
+        assert_eq!(
+            item["properties"]["academic_fields"]["items"]["pattern"],
+            "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        );
     }
 }
