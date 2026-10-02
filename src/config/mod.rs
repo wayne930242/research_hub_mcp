@@ -46,11 +46,28 @@ pub struct PaperSearchConfig {
     pub project_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct LibraryConfig {
     /// Bib-manager HTTP API URL; canonical writes happen through this API
     pub api_url: String,
+    /// Bib-manager admin credential, exchanged for a session before each write.
+    /// Never serialized, logged, or exposed in the schema.
+    #[serde(skip_serializing)]
+    #[schemars(skip)]
+    pub admin_token: Option<String>,
+}
+
+impl std::fmt::Debug for LibraryConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LibraryConfig")
+            .field("api_url", &self.api_url)
+            .field(
+                "admin_token",
+                &self.admin_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -185,6 +202,8 @@ pub struct ConfigEnvOverrides {
     pub paper_search_command: Option<String>,
     #[serde(rename = "library_api_url")]
     pub library_api_url: Option<String>,
+    #[serde(rename = "library_admin_token")]
+    pub library_admin_token: Option<String>,
 }
 
 impl Default for Config {
@@ -231,6 +250,7 @@ impl Default for LibraryConfig {
     fn default() -> Self {
         Self {
             api_url: "http://127.0.0.1:8000".to_string(),
+            admin_token: None,
         }
     }
 }
@@ -486,6 +506,12 @@ impl Config {
                 if let Some(api_url) = env_overrides.library_api_url {
                     if !api_url.trim().is_empty() {
                         config.library.api_url = api_url.trim_end_matches('/').to_string();
+                    }
+                }
+
+                if let Some(token) = env_overrides.library_admin_token {
+                    if !token.trim().is_empty() {
+                        config.library.admin_token = Some(token.trim().to_string());
                     }
                 }
             }
@@ -1196,6 +1222,18 @@ default_rate = 0.8    # Slightly slower for production reliability
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_apply_env_overrides_library_admin_token_is_read() {
+        std::env::set_var("RSH_LIBRARY_ADMIN_TOKEN", " admin-credential ");
+        let config = Config::apply_env_overrides(Config::default());
+        std::env::remove_var("RSH_LIBRARY_ADMIN_TOKEN");
+
+        assert_eq!(
+            config.library.admin_token.as_deref(),
+            Some("admin-credential")
+        );
+    }
 
     #[test]
     fn test_default_config_is_valid() {

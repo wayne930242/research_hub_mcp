@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-10-02
+
+### Security
+
+- `save_papers_to_library` authenticates to the library API: it exchanges
+  `RSH_LIBRARY_ADMIN_TOKEN` for an admin session and sends it as a bearer token.
+  Without the variable, saving fails before any request.
+
 ## [0.6.6] - 2025-01-06
 
 ### Fixed

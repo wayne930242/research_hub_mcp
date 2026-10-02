@@ -82,10 +82,23 @@ impl PaperSearchClient {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LibraryClient {
     http: reqwest::Client,
     api_url: String,
+    admin_token: Option<String>,
+}
+
+impl std::fmt::Debug for LibraryClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LibraryClient")
+            .field("api_url", &self.api_url)
+            .field(
+                "admin_token",
+                &self.admin_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl LibraryClient {
@@ -94,27 +107,60 @@ impl LibraryClient {
         Self {
             http: reqwest::Client::new(),
             api_url: config.library.api_url.trim_end_matches('/').to_string(),
+            admin_token: config.library.admin_token.clone(),
         }
     }
 
+    /// Writes require a bib-manager admin session, minted from the admin credential.
     pub async fn save_entries(&self, entries: Value) -> Result<Value> {
+        let session = self.admin_session().await?;
         self.post(
             "/api/entries/batch",
             serde_json::json!({ "entries": entries }),
+            Some(&session),
         )
         .await
     }
 
     pub async fn export_bibtex(&self, keys: Option<Vec<String>>) -> Result<Value> {
-        self.post("/api/entries/export", serde_json::json!({ "keys": keys }))
-            .await
+        self.post(
+            "/api/entries/export",
+            serde_json::json!({ "keys": keys }),
+            None,
+        )
+        .await
     }
 
-    async fn post(&self, path: &str, payload: Value) -> Result<Value> {
-        let response = self
+    async fn admin_session(&self) -> Result<String> {
+        let credential = self.admin_token.as_deref().ok_or_else(|| {
+            Error::AuthenticationFailed(
+                "saving to the library requires RSH_LIBRARY_ADMIN_TOKEN".to_string(),
+            )
+        })?;
+        let session = self
+            .post(
+                "/api/admin/session",
+                serde_json::json!({ "credential": credential }),
+                None,
+            )
+            .await?;
+        session["token"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| {
+                Error::AuthenticationFailed("library API returned no session token".to_string())
+            })
+    }
+
+    async fn post(&self, path: &str, payload: Value, bearer: Option<&str>) -> Result<Value> {
+        let mut request = self
             .http
             .post(format!("{}{path}", self.api_url))
-            .json(&payload)
+            .json(&payload);
+        if let Some(token) = bearer {
+            request = request.bearer_auth(token);
+        }
+        let response = request
             .send()
             .await
             .map_err(|error| Error::Service(format!("library API unavailable: {error}")))?;

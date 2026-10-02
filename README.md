@@ -60,10 +60,13 @@ overridden without editing a config file:
 export RSH_PAPER_SEARCH_COMMAND="$HOME/.local/bin/uv"
 export RSH_PAPER_SEARCH_PROJECT_DIR="/path/to/paper-search-mcp"
 export RSH_LIBRARY_API_URL="https://library.example.com"
+export RSH_LIBRARY_ADMIN_TOKEN="..."   # required by save_papers_to_library
 ```
 
 The library service holds `DATABASE_URL`; this MCP process never needs direct
-database credentials.
+database credentials. Saving exchanges `RSH_LIBRARY_ADMIN_TOKEN` (the library's
+admin credential) for a short-lived session before each write; the credential is
+never logged or serialized. Search, download, and bibliography export need no token.
 
 ## MCP tools
 

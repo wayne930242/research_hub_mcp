@@ -8,7 +8,7 @@ license = "GPL-3.0"
 name = "rust-research-mcp"
 repository = "https://github.com/wayne930242/research_hub_mcp"
 rust-version = "1.88"
-version = "0.6.7"
+version = "0.6.8"
 exclude = [
     "build/",
     "target/",
