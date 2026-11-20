@@ -242,6 +242,13 @@ impl Default for ExtractionPatterns {
     }
 }
 
+/// The metadata cache database under `cache_root`, the user's cache directory.
+fn metadata_cache_path(cache_root: &Path) -> PathBuf {
+    cache_root
+        .join("knowledge_accumulator_mcp")
+        .join("metadata")
+}
+
 impl MetadataExtractor {
     /// Validate PDF file before attempting to parse
     async fn validate_pdf_file(file_path: &Path) -> Result<()> {
@@ -302,21 +309,25 @@ impl MetadataExtractor {
     pub fn new(config: Arc<Config>) -> Result<Self> {
         info!("Initializing metadata extraction tool");
 
-        // Initialize cache database if enabled
-        // Initialize cache database
-        let cache_db = {
-            match sled::open(".metadata_cache") {
+        // The cache lives in the user's cache directory, never in the working directory the server was started from.
+        let cache_db = match dirs::cache_dir().map(|root| metadata_cache_path(&root)) {
+            Some(path) => match sled::open(&path) {
                 Ok(db) => {
-                    info!("Opened metadata cache database");
+                    info!("Opened metadata cache database at {}", path.display());
                     Some(db)
                 }
                 Err(e) => {
                     warn!(
-                        "Failed to open cache database: {}, continuing without cache",
+                        "Failed to open cache database at {}: {}, continuing without cache",
+                        path.display(),
                         e
                     );
                     None
                 }
+            },
+            None => {
+                warn!("No user cache directory, continuing without metadata cache");
+                None
             }
         };
 
@@ -1225,6 +1236,14 @@ impl std::fmt::Debug for MetadataExtractor {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_metadata_cache_path_under_cache_root_is_app_scoped() {
+        assert_eq!(
+            metadata_cache_path(Path::new("/home/u/.cache")),
+            PathBuf::from("/home/u/.cache/knowledge_accumulator_mcp/metadata")
+        );
+    }
 
     fn create_test_extractor() -> MetadataExtractor {
         let config = Arc::new(Config::default());
