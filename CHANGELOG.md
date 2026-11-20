@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-11-20
+
+### Fixed
+
+- The metadata cache opens under the user's cache directory
+  (`~/Library/Caches/knowledge_accumulator_mcp/metadata` on macOS,
+  `~/.cache/knowledge_accumulator_mcp/metadata` on Linux) instead of a
+  `.metadata_cache` folder in whatever directory the server was started from.
+  Old `.metadata_cache` folders are no longer read and can be deleted.
+
 ## [0.6.8] - 2026-10-02
 
 ### Security
